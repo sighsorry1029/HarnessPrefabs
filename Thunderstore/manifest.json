@@ -2,7 +2,7 @@
   "name": "HarnessPrefabs",
   "version_number": "1.0.0",
   "website_url": "",
-  "description": "Policy-driven Valheim prefab harnessing for public and admin Hammer access.",
+  "description": "Unlock and govern existing Valheim and modded prefabs with server-synced YAML policy, curated MVBP-style defaults, public Hammer access, admin-only debug tabs, safer prefab filtering, and Jotunn-powered categories, icons, and placement fixes.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202",
     "ValheimModding-Jotunn-2.29.1"
