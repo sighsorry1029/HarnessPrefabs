@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')"/>
     <Import Project="environment.props"/>
@@ -8,8 +8,8 @@
         <ProjectGuid>{4358610B-F3F4-4843-B7AF-98B7BC60DCDE}</ProjectGuid>
         <OutputType>Library</OutputType>
         <AppDesignerFolder>Properties</AppDesignerFolder>
-        <RootNamespace>ServerSyncModTemplate</RootNamespace>
-        <AssemblyName>ServerSyncModTemplate</AssemblyName>
+        <RootNamespace>HarnessPrefabs</RootNamespace>
+        <AssemblyName>HarnessPrefabs</AssemblyName>
         <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
         <FileAlignment>512</FileAlignment>
         <LangVersion>preview</LangVersion>
@@ -62,6 +62,10 @@
             </PropertyGroup>
         </When>
     </Choose>
+    <PropertyGroup>
+        <JotunnVersion>2.29.1</JotunnVersion>
+        <JotunnPath Condition="'$(JotunnPath)' == ''">Libs\Jotunn.dll</JotunnPath>
+    </PropertyGroup>
     <ItemGroup>
         <Reference Include="0Harmony">
             <HintPath>$(BepInExPath)\core\0Harmony.dll</HintPath>
@@ -78,8 +82,16 @@
         <Reference Include="BepInEx">
             <HintPath>$(BepInExPath)\core\BepInEx.dll</HintPath>
         </Reference>
+        <Reference Include="Jotunn">
+            <HintPath>$(JotunnPath)</HintPath>
+            <Private>False</Private>
+        </Reference>
         <Reference Include="ServerSync">
             <HintPath>Libs\ServerSync.dll</HintPath>
+        </Reference>
+        <Reference Include="YamlDotNet">
+            <HintPath>$(USERPROFILE)\.nuget\packages\yamldotnet\16.3.0\lib\net47\YamlDotNet.dll</HintPath>
+            <Private>True</Private>
         </Reference>
         <Reference Include="System"/>
         <Reference Include="System.Core"/>
@@ -91,14 +103,32 @@
         <Reference Include="UnityEngine.AssetBundleModule">
             <HintPath>$(CorlibPath)\UnityEngine.AssetBundleModule.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.AudioModule">
+            <HintPath>$(CorlibPath)\UnityEngine.AudioModule.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="UnityEngine.AnimationModule">
+            <HintPath>$(CorlibPath)\UnityEngine.AnimationModule.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
         <Reference Include="UnityEngine.CoreModule">
             <HintPath>$(CorlibPath)\UnityEngine.CoreModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ClothModule">
+            <HintPath>$(CorlibPath)\UnityEngine.ClothModule.dll</HintPath>
+            <Private>False</Private>
         </Reference>
         <Reference Include="UnityEngine.IMGUIModule">
             <HintPath>$(CorlibPath)\UnityEngine.IMGUIModule.dll</HintPath>
         </Reference>
         <Reference Include="UnityEngine.InputLegacyModule">
             <HintPath>$(CorlibPath)\UnityEngine.InputLegacyModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ParticleSystemModule">
+            <HintPath>$(CorlibPath)\UnityEngine.ParticleSystemModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.PhysicsModule">
+            <HintPath>$(CorlibPath)\UnityEngine.PhysicsModule.dll</HintPath>
         </Reference>
         <Reference Include="UnityEngine.UI">
             <HintPath>$(CorlibPath)\UnityEngine.UI.dll</HintPath>
@@ -108,10 +138,29 @@
         </Reference>
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="LocalizationManager.cs"/>
+        <Compile Include="MvbpCompatibilityDefaults.cs"/>
+        <Compile Include="MvbpPrefabDefaults.cs"/>
+        <Compile Include="MvbpPrefabDefaults.generated.cs"/>
+        <Compile Include="PrefabAccess.cs"/>
+        <Compile Include="PrefabBuildManager.cs"/>
+        <Compile Include="PrefabCategoryRegistry.cs"/>
+        <Compile Include="PrefabClassifier.cs"/>
+        <Compile Include="HarnessPrefabsRuntime.cs"/>
+        <Compile Include="PrefabLocalizationOverrideManager.cs"/>
+        <Compile Include="HarnessPrefabsPlacedPiecePatches.cs"/>
+        <Compile Include="HarnessPrefabsConsoleCommands.cs"/>
+        <Compile Include="PrefabIconRenderer.cs"/>
+        <Compile Include="PrefabMvbpFixups.cs"/>
+        <Compile Include="PrefabOwnerCatalog.cs"/>
+        <Compile Include="HarnessPrefabsSfxManager.cs"/>
+        <Compile Include="PrefabPlacementPatchRegistry.cs"/>
+        <Compile Include="PrefabRequirementParser.cs"/>
+        <Compile Include="PrefabRule.cs"/>
+        <Compile Include="PrefabRuleStore.cs"/>
+        <Compile Include="HarnessPrefabsReferenceState.cs"/>
         <Compile Include="Plugin.cs"/>
         <Compile Include="Properties\AssemblyInfo.cs"/>
-        <Compile Include="VersionHandshake.cs"/>
+        <Compile Include="HarnessPrefabsPatches.cs"/>
     </ItemGroup>
     <ItemGroup>
         <Content Include=".gitignore"/>
@@ -120,12 +169,12 @@
         <Content Include="Libs\ServerSync.dll">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
+        <None Include="Libs\Jotunn.dll"/>
         <Content Include="LICENSE.txt"/>
         <Content Include="README.md"/>
         <Content Include="Thunderstore\CHANGELOG.md"/>
         <Content Include="Thunderstore\icon.png"/>
         <Content Include="Thunderstore\manifest.json"/>
-        <EmbeddedResource Include="translations\English.yml"/>
         <Content Include="UpdateManifest.ps1"/>
     </ItemGroup>
     <ItemGroup>
@@ -139,6 +188,9 @@
         <PackageReference Include="YamlDotNet" Version="16.3.0" />
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
+    <Target Name="ValidateJotunnReference" BeforeTargets="ResolveReferences">
+        <Error Text="Jotunn $(JotunnVersion) reference not found at $(JotunnPath). Copy ValheimModding-Jotunn $(JotunnVersion) to Libs\Jotunn.dll or pass /p:JotunnPath=... to MSBuild." Condition="'$(JotunnPath)' == '' Or !Exists('$(JotunnPath)')"/>
+    </Target>
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
          Other similar extension points exist, see Microsoft.Common.targets.
     <Target Name="BeforeBuild">
@@ -176,39 +228,14 @@
         <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath3)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath3)')"/>
     </Target>
     <Target Name="CopyReadMeToTSFolder" AfterTargets="CopyOutputDLL" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
-        <Warning Text="README.md not found in project directory. A default README.md file will be created for the Thunderstore package" Condition="!Exists('README.md')"/>
-        <WriteLinesToFile File="README.md" Lines="Default Readme file from one of Azumatt's Templates. Replace this with actual content." Overwrite="false" Condition="!Exists('README.md')"/>
-        <Copy SourceFiles="README.md" DestinationFolder="$(PackageDir)" OverwriteReadOnlyFiles="true"/>
-        <Copy SourceFiles="README.md" DestinationFolder="$(ProjectDir)\Thunderstore" OverwriteReadOnlyFiles="true"/>
+        <Warning Text="README.md not found in project directory. A default README.md file will be created for the Thunderstore package" Condition="!Exists('$(ProjectDir)README.md')"/>
+        <WriteLinesToFile File="$(ProjectDir)README.md" Lines="Default Readme file from one of Azumatt's Templates. Replace this with actual content." Overwrite="false" Condition="!Exists('$(ProjectDir)README.md')"/>
+        <RemoveDir Directories="$(PackageDir)" Condition="Exists('$(PackageDir)')"/>
+        <MakeDir Directories="$(PackageDir)"/>
+        <Copy SourceFiles="$(ProjectDir)README.md" DestinationFolder="$(PackageDir)" OverwriteReadOnlyFiles="true"/>
     </Target>
-    <UsingTask TaskName="WriteManifestFile" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
-        <ParameterGroup>
-            <ManifestFile ParameterType="System.String" Required="true"/>
-            <AssemblyName ParameterType="System.String" Required="true"/>
-        </ParameterGroup>
-        <Task>
-            <Code Type="Fragment" Language="cs">
-                <![CDATA[
-if (!System.IO.File.Exists(ManifestFile))
-{
-string content = @"{
-  ""name"": """ + AssemblyName + @""",
-  ""version_number"": ""1.0.0"",
-  ""website_url"": ""https://discord.gg/pdHgy6Bsng"",
-  ""description"": ""Your mod description goes here. Do not forget to replace the icon.png file with your own. Must be 256x256. Your Readme.md file will be copied from the one in your project folder."",
-  ""dependencies"": [
-    ""denikson-BepInExPack_Valheim-5.4.2105""
-]
-}";
-System.IO.File.WriteAllText(ManifestFile, content);
-}
-]]>
-
-            </Code>
-        </Task>
-    </UsingTask>
-    <Target Name="UpdateManifestVersion" AfterTargets="CopyReadmeToTSFolder" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
-        <WriteManifestFile ManifestFile="$(ProjectDir)Thunderstore\manifest.json" AssemblyName="$(AssemblyName)"/>
+    <Target Name="UpdateManifestVersion" AfterTargets="CopyReadMeToTSFolder" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
+        <Error Text="manifest.json not found in Thunderstore directory." Condition="!Exists('$(ProjectDir)Thunderstore\manifest.json')"/>
         <ItemGroup>
             <ManifestFile Include="$(ProjectDir)Thunderstore\manifest.json"/>
         </ItemGroup>
@@ -235,6 +262,7 @@ System.IO.File.WriteAllText(ManifestFile, content);
         <ItemGroup>
             <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;"/>
         </ItemGroup>
+        <RemoveDir Directories="$(PackageDir)" Condition="Exists('$(PackageDir)')"/>
         <MakeDir Directories="$(PackageDir)"/>
         <Copy SourceFiles="@(NexusPackageFiles)" DestinationFolder="$(PackageDir)"/>
         <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Nexus\$(PackageName).zip" Overwrite="true"/>

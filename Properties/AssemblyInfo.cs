@@ -1,16 +1,16 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.InteropServices;
-using ServerSyncModTemplate;
+using HarnessPrefabs;
 
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle(ServerSyncModTemplatePlugin.ModName)]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle(HarnessPrefabsPlugin.ModName)]
+[assembly: AssemblyDescription("Policy driven Valheim prefab builder tabs for public and admin clients.")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany(ServerSyncModTemplatePlugin.Author)]
-[assembly: AssemblyProduct(ServerSyncModTemplatePlugin.ModName)]
-[assembly: AssemblyCopyright("Copyright ©  2021")]
+[assembly: AssemblyCompany(HarnessPrefabsPlugin.Author)]
+[assembly: AssemblyProduct(HarnessPrefabsPlugin.ModName)]
+[assembly: AssemblyCopyright("Copyright ©  2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -32,5 +32,5 @@ using ServerSyncModTemplate;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion(ServerSyncModTemplatePlugin.ModVersion)]
-[assembly: AssemblyFileVersion(ServerSyncModTemplatePlugin.ModVersion)]
+[assembly: AssemblyVersion(HarnessPrefabsPlugin.ModVersion)]
+[assembly: AssemblyFileVersion(HarnessPrefabsPlugin.ModVersion)]

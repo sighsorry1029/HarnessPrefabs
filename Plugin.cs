@@ -1,88 +1,222 @@
-﻿using System;
+using System;
 using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Timers;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
-using JetBrains.Annotations;
+using Jotunn.Managers;
 using ServerSync;
 using UnityEngine;
 
-namespace ServerSyncModTemplate;
+namespace HarnessPrefabs;
 
-[BepInPlugin(ModGUID, ModName, ModVersion)]
-public class ServerSyncModTemplatePlugin : BaseUnityPlugin
+[BepInPlugin(ModGuid, ModName, ModVersion)]
+[BepInDependency(JotunnGuid, JotunnVersion)]
+public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
-    internal const string ModName = "ServerSyncModTemplate";
+    internal const string ModName = "HarnessPrefabs";
     internal const string ModVersion = "1.0.0";
-    internal const string Author = "{Azumatt}";
-    private const string ModGUID = $"{Author}.{ModName}";
-    private static string ConfigFileName = $"{ModGUID}.cfg";
-    private static string ConfigFileFullPath = Paths.ConfigPath + Path.DirectorySeparatorChar + ConfigFileName;
-    internal static string ConnectionError = "";
-    private readonly Harmony _harmony = new(ModGUID);
-    public static readonly ManualLogSource ServerSyncModTemplateLogger = BepInEx.Logging.Logger.CreateLogSource(ModName);
-    private static readonly ConfigSync ConfigSync = new(ModGUID) { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
-    private FileSystemWatcher _watcher;
-    private readonly object _reloadLock = new();
-    private DateTime _lastConfigReloadTime;
-    private const long RELOAD_DELAY = 10000000; // One second
+    internal const string Author = "sighsorry";
+    internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
+    internal const string JotunnGuid = "com.jotunn.jotunn";
+    internal const string JotunnVersion = "2.29.1";
 
-    public enum Toggle
+    private static readonly string ConfigFileName = $"{ModGuid}.cfg";
+    private static readonly string ConfigFileFullPath = Path.Combine(Paths.ConfigPath, ConfigFileName);
+    private static readonly ConfigSync SyncedConfig = new(ModGuid)
     {
-        On = 1,
-        Off = 0
+        DisplayName = ModName,
+        CurrentVersion = ModVersion,
+        MinimumRequiredVersion = ModVersion
+    };
+
+    private static readonly CustomSyncedValue<string> SyncedRules = new(SyncedConfig, "prefabs-yaml", string.Empty, 100);
+    private readonly Harmony _harmony = new(ModGuid);
+    private readonly object _reloadLock = new();
+    private FileSystemWatcher? _configWatcher;
+    private FileSystemWatcher? _rulesWatcher;
+    private DateTime _lastConfigReloadTime;
+    private DateTime _lastRulesReloadTime;
+    private string? _lastConfigFileText;
+    private static bool _sourceOfTruthFileModeReady;
+
+    internal static ManualLogSource Log { get; private set; } = null!;
+    internal static bool IsAdmin => SyncedConfig.IsAdmin;
+    internal static bool IsSourceOfTruth => SyncedConfig.IsSourceOfTruth;
+    internal static bool Verbose => VerboseLogging.Value == Toggle.On;
+    internal static bool IsDebugMode => Player.m_debugMode;
+    internal static bool HarnessHammerTabsEnabled => IsAdmin && IsDebugMode && (ShowHarnessPrefabTabs == null || ShowHarnessPrefabTabs.Value == Toggle.On);
+    internal static bool UnsafeBedPatchesEnabled => EnableUnsafeBedPatches.Value == Toggle.On;
+    internal static int FermenterPatchDurationPercent => Math.Min(100, Math.Max(0, UnsafeFermenterPatchDurationPercent.Value));
+    internal static float TrailershipSpeedRatio => Mathf.Clamp(TrailershipVikingShipSpeedRatio == null ? 0.66f : TrailershipVikingShipSpeedRatio.Value, 0.5f, 1f);
+
+    internal enum Toggle
+    {
+        Off = 0,
+        On = 1
     }
 
-    public void Awake()
+    private static ConfigEntry<Toggle> LockConfiguration = null!;
+    private static ConfigEntry<Toggle> VerboseLogging = null!;
+    private static ConfigEntry<Toggle> ShowHarnessPrefabTabs = null!;
+    private static ConfigEntry<float> TrailershipVikingShipSpeedRatio = null!;
+    private static ConfigEntry<Toggle> EnableUnsafeBedPatches = null!;
+    private static ConfigEntry<int> UnsafeFermenterPatchDurationPercent = null!;
+
+    private void Awake()
     {
+        Log = Logger;
+        Instance = this;
+
         bool saveOnSet = Config.SaveOnConfigSet;
         Config.SaveOnConfigSet = false;
 
-        // Uncomment the line below to use the LocalizationManager for localizing your mod.
-        // Make sure to populate the English.yml file in the translation folder with your keys to be localized and the values associated before uncommenting!.
-        //Localizer.Load(); // Use this to initialize the LocalizationManager (for more information on LocalizationManager, see the LocalizationManager documentation https://github.com/blaxxun-boop/LocalizationManager#example-project).
+        LockConfiguration = BindSynced("1 - General", "Lock Configuration", Toggle.On, "If on, prefab policy is controlled by the server and can only be changed by admins.");
+        VerboseLogging = BindSynced("1 - General", "Verbose Logging", Toggle.Off, "If on, writes detailed prefab discovery and hammer registration logs.", synchronizedSetting: false);
+        ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, Harness Hammer tabs are visible to admin clients while Valheim debugmode is enabled. If off, Harness tabs stay hidden even in debugmode.", synchronizedSetting: false);
+        ShowHarnessPrefabTabs.SettingChanged += (_, _) => PrefabBuildManager.RefreshIfHarnessHammerVisibilityChanged();
+        TrailershipVikingShipSpeedRatio = BindSynced(
+            "2 - Prefab Tweaks",
+            "Trailership VikingShip Speed Ratio",
+            0.66f,
+            new ConfigDescription(
+                "Controls Trailership movement speed relative to VikingShip. 0.5 is half speed, 1.0 matches VikingShip.",
+                new AcceptableValueRange<float>(0.5f, 1f)));
+        TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.Refresh("Trailership speed ratio changed");
+        EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
+        UnsafeFermenterPatchDurationPercent = BindSynced(
+            "2 - Prefab Tweaks",
+            "Fermenter Patch Duration Percent",
+            0,
+            new ConfigDescription(
+                "0 disables the dvergrprops_barrel fermenter patch. 1-100 enables the patch and sets fermentation time as a percentage of the vanilla fermenter duration. 70 matches the old MVBP behavior. Unsafe: disabling the mod later can affect fermenting contents.",
+                new AcceptableValueRange<int>(0, 100)));
+        _ = SyncedConfig.AddLockingConfigEntry(LockConfiguration);
 
-        _serverConfigLocked = config("1 - General", "Lock Configuration", Toggle.On, "If on, the configuration is locked and can be changed by server admins only.");
-        _ = ConfigSync.AddLockingConfigEntry(_serverConfigLocked);
+        PrefabLocalizationOverrideManager.Initialize(SyncedConfig);
+        PrefabRuleStore.Initialize(SyncedRules);
+        PrefabBuildManager.Initialize();
+        HarnessPrefabsConsoleCommands.Register();
+        SyncedRules.ValueChanged += OnSyncedRulesChanged;
+        SyncedConfig.SourceOfTruthChanged += OnSourceOfTruthChanged;
+        PieceManager.OnPiecesRegistered += OnJotunnPiecesRegistered;
 
+        _harmony.PatchAll(typeof(HarnessPrefabsPlugin).Assembly);
+        SetupConfigWatcher();
 
-        Assembly assembly = Assembly.GetExecutingAssembly();
-        _harmony.PatchAll(assembly);
-        SetupWatcher();
+        SaveConfig(reload: false);
+        _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
+        Config.SaveOnConfigSet = saveOnSet;
 
-        Config.Save();
-        if (saveOnSet)
-        {
-            Config.SaveOnConfigSet = saveOnSet;
-        }
+        Log.LogInfo($"{ModName} {ModVersion} loaded.");
     }
 
     private void OnDestroy()
     {
-        SaveWithRespectToConfigSet();
-        _watcher?.Dispose();
+        SaveConfig(reload: false);
+        _configWatcher?.Dispose();
+        _rulesWatcher?.Dispose();
+        PrefabLocalizationOverrideManager.Dispose();
+        SyncedRules.ValueChanged -= OnSyncedRulesChanged;
+        SyncedConfig.SourceOfTruthChanged -= OnSourceOfTruthChanged;
+        PieceManager.OnPiecesRegistered -= OnJotunnPiecesRegistered;
+        if (ReferenceEquals(Instance, this))
+        {
+            Instance = null;
+        }
+        _harmony.UnpatchSelf();
     }
 
-    private void SetupWatcher()
+    private static void OnSyncedRulesChanged()
     {
-        _watcher = new FileSystemWatcher(Paths.ConfigPath, ConfigFileName);
-        _watcher.Changed += ReadConfigValues;
-        _watcher.Created += ReadConfigValues;
-        _watcher.Renamed += ReadConfigValues;
-        _watcher.IncludeSubdirectories = true;
-        _watcher.SynchronizingObject = ThreadingHelper.SynchronizingObject;
-        _watcher.EnableRaisingEvents = true;
+        if (IsSourceOfTruth)
+        {
+            return;
+        }
+
+        if (PrefabRuleStore.LoadSyncedRulesForCurrentAuthority())
+        {
+            PrefabBuildManager.RefreshFromCachedRules("synced prefab rules changed");
+        }
+    }
+
+    private static void OnSourceOfTruthChanged(bool isSourceOfTruth)
+    {
+        if (isSourceOfTruth)
+        {
+            EnsureSourceOfTruthFileMode();
+        }
+        else
+        {
+            _sourceOfTruthFileModeReady = false;
+            Instance?.SetupRuleWatcher();
+            PrefabLocalizationOverrideManager.SetupFileWatcher();
+        }
+
+        PrefabBuildManager.Refresh("config authority changed");
+    }
+
+    private static void OnJotunnPiecesRegistered()
+    {
+        PrefabBuildManager.MarkJotunnPiecesRegistered();
+        PrefabBuildManager.Refresh("Jotunn.OnPiecesRegistered");
+    }
+
+    internal static void EnsureSourceOfTruthFileMode()
+    {
+        if (!IsSourceOfTruth || _sourceOfTruthFileModeReady)
+        {
+            return;
+        }
+
+        _sourceOfTruthFileModeReady = true;
+        Instance?.SetupRuleWatcher();
+        PrefabLocalizationOverrideManager.SetupFileWatcher();
+        PrefabLocalizationOverrideManager.ReloadFromDiskAndSync();
+    }
+
+    private static HarnessPrefabsPlugin? Instance { get; set; }
+
+    private void SetupConfigWatcher()
+    {
+        _configWatcher = new FileSystemWatcher(Paths.ConfigPath, ConfigFileName)
+        {
+            IncludeSubdirectories = false,
+            SynchronizingObject = ThreadingHelper.SynchronizingObject,
+            EnableRaisingEvents = true
+        };
+        _configWatcher.Changed += ReadConfigValues;
+        _configWatcher.Created += ReadConfigValues;
+        _configWatcher.Renamed += ReadConfigValues;
+    }
+
+    private void SetupRuleWatcher()
+    {
+        if (!IsSourceOfTruth)
+        {
+            _rulesWatcher?.Dispose();
+            _rulesWatcher = null;
+            return;
+        }
+
+        _rulesWatcher?.Dispose();
+        string rulesDirectory = PrefabRuleStore.RulesDirectory;
+        Directory.CreateDirectory(rulesDirectory);
+        _rulesWatcher = new FileSystemWatcher(rulesDirectory, "*.*")
+        {
+            IncludeSubdirectories = false,
+            SynchronizingObject = ThreadingHelper.SynchronizingObject,
+            EnableRaisingEvents = true
+        };
+        _rulesWatcher.Changed += ReadRuleValues;
+        _rulesWatcher.Created += ReadRuleValues;
+        _rulesWatcher.Deleted += ReadRuleValues;
+        _rulesWatcher.Renamed += ReadRuleValues;
     }
 
     private void ReadConfigValues(object sender, FileSystemEventArgs e)
     {
-        DateTime now = DateTime.Now;
-        long time = now.Ticks - _lastConfigReloadTime.Ticks;
-        if (time < RELOAD_DELAY)
+        if (IsTooSoon(ref _lastConfigReloadTime))
         {
             return;
         }
@@ -91,114 +225,103 @@ public class ServerSyncModTemplatePlugin : BaseUnityPlugin
         {
             if (!File.Exists(ConfigFileFullPath))
             {
-                ServerSyncModTemplateLogger.LogWarning("Config file does not exist. Skipping reload.");
+                Log.LogWarning("Config file does not exist. Skipping reload.");
                 return;
             }
 
             try
             {
-                ServerSyncModTemplateLogger.LogDebug("Reloading configuration...");
-                SaveWithRespectToConfigSet(true);
-                ServerSyncModTemplateLogger.LogInfo("Configuration reload complete.");
+                string configFileText = File.ReadAllText(ConfigFileFullPath);
+                if (string.Equals(_lastConfigFileText, configFileText, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                SaveConfig(reload: true);
+                _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
+                PrefabBuildManager.Refresh("config file reloaded");
             }
             catch (Exception ex)
             {
-                ServerSyncModTemplateLogger.LogError($"Error reloading configuration: {ex.Message}");
+                Log.LogError($"Error reloading configuration: {ex.Message}");
             }
         }
-
-        _lastConfigReloadTime = now;
     }
 
-    private void SaveWithRespectToConfigSet(bool reload = false)
+    private void ReadRuleValues(object sender, FileSystemEventArgs e)
+    {
+        if (!PrefabRuleStore.IsOverrideFileEvent(e) || IsTooSoon(ref _lastRulesReloadTime) || !IsSourceOfTruth)
+        {
+            return;
+        }
+
+        lock (_reloadLock)
+        {
+            try
+            {
+                if (!PrefabRuleStore.HasCachedDiscoveries)
+                {
+                    PrefabBuildManager.Refresh("prefab rules file reloaded");
+                    return;
+                }
+
+                PrefabRuleStore.PublishRulesFromDisk();
+                PrefabBuildManager.RefreshFromCachedRules("prefab rules file reloaded");
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"Error reloading prefab rules: {ex.Message}");
+            }
+        }
+    }
+
+    private static bool IsTooSoon(ref DateTime lastReload)
+    {
+        DateTime now = DateTime.Now;
+        if ((now - lastReload).TotalSeconds < 1)
+        {
+            return true;
+        }
+
+        lastReload = now;
+        return false;
+    }
+
+    private static string? ReadFileTextIfExists(string path)
+    {
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
+    private void SaveConfig(bool reload)
     {
         bool originalSaveOnSet = Config.SaveOnConfigSet;
         Config.SaveOnConfigSet = false;
         if (reload)
+        {
             Config.Reload();
-        Config.Save();
-        if (originalSaveOnSet)
-        {
-            Config.SaveOnConfigSet = originalSaveOnSet;
         }
-        
-        // If you want to do something once localization completes, LocalizationManager has a hook for that.
-        /*Localizer.OnLocalizationComplete += () =>
-        {
-            // Do something
-            ItemManagerModTemplateLogger.LogDebug("OnLocalizationComplete called");
-        };*/
+
+        Config.Save();
+        Config.SaveOnConfigSet = originalSaveOnSet;
     }
 
-
-    #region ConfigOptions
-
-    private static ConfigEntry<Toggle> _serverConfigLocked = null!;
-
-    private ConfigEntry<T> config<T>(string group, string name, T value, ConfigDescription description, bool synchronizedSetting = true)
+    private ConfigEntry<T> BindSynced<T>(string group, string name, T value, string description, bool synchronizedSetting = true)
     {
-        ConfigDescription extendedDescription = new(description.Description + (synchronizedSetting ? " [Synced with Server]" : " [Not Synced with Server]"), description.AcceptableValues, description.Tags);
+        ConfigDescription extendedDescription = new(description + (synchronizedSetting ? " [Synced with Server]" : " [Not Synced with Server]"));
+        return BindSynced(group, name, value, extendedDescription, synchronizedSetting);
+    }
+
+    private ConfigEntry<T> BindSynced<T>(string group, string name, T value, ConfigDescription description, bool synchronizedSetting = true)
+    {
+        object[] tags = description.Tags ?? Array.Empty<object>();
+        ConfigDescription extendedDescription = new(
+            description.Description + (synchronizedSetting ? " [Synced with Server]" : " [Not Synced with Server]"),
+            description.AcceptableValues,
+            tags);
         ConfigEntry<T> configEntry = Config.Bind(group, name, value, extendedDescription);
-        //var configEntry = Config.Bind(group, name, value, description);
-
-        SyncedConfigEntry<T> syncedConfigEntry = ConfigSync.AddConfigEntry(configEntry);
+        SyncedConfigEntry<T> syncedConfigEntry = SyncedConfig.AddConfigEntry(configEntry);
         syncedConfigEntry.SynchronizedConfig = synchronizedSetting;
-
         return configEntry;
     }
 
-    private ConfigEntry<T> config<T>(string group, string name, T value, string description, bool synchronizedSetting = true)
-    {
-        return config(group, name, value, new ConfigDescription(description), synchronizedSetting);
-    }
-
-    private class ConfigurationManagerAttributes
-    {
-        [UsedImplicitly] public int? Order = null!;
-        [UsedImplicitly] public bool? Browsable = null!;
-        [UsedImplicitly] public string? Category = null!;
-        [UsedImplicitly] public Action<ConfigEntryBase>? CustomDrawer = null!;
-    }
-
-    class AcceptableShortcuts() : AcceptableValueBase(typeof(KeyboardShortcut))
-    {
-        public override object Clamp(object value) => value;
-        public override bool IsValid(object value) => true;
-
-        public override string ToDescriptionString() => $"# Acceptable values: {string.Join(", ", UnityInput.Current.SupportedKeyCodes)}";
-    }
-
-    #endregion
-}
-
-public static class KeyboardExtensions
-{
-    extension(KeyboardShortcut shortcut)
-    {
-        public bool IsKeyDown()
-        {
-            return shortcut.MainKey != KeyCode.None && Input.GetKeyDown(shortcut.MainKey) && shortcut.Modifiers.All(Input.GetKey);
-        }
-
-        public bool IsKeyHeld()
-        {
-            return shortcut.MainKey != KeyCode.None && Input.GetKey(shortcut.MainKey) && shortcut.Modifiers.All(Input.GetKey);
-        }
-    }
-}
-
-public static class ToggleExtentions
-{
-    extension(ServerSyncModTemplatePlugin.Toggle value)
-    {
-        public bool IsOn()
-        {
-            return value == ServerSyncModTemplatePlugin.Toggle.On;
-        }
-
-        public bool IsOff()
-        {
-            return value == ServerSyncModTemplatePlugin.Toggle.Off;
-        }
-    }
 }

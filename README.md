@@ -1,88 +1,199 @@
-# Server Sync Mod Template
+# HarnessPrefabs
 
-Can be used to already have your project set up and ready to go with ServerSync and basic version checking. Please see the [Original Repository](https://github.com/blaxxun-boop/ServerSync) if you have to update, or have further questions this template might not answer.
+HarnessPrefabs is a policy-driven prefab access mod for Valheim. It scans vanilla Valheim and loaded prefab-adding mods for existing prefabs that are not normally available in the Hammer build table, then lets the server decide which ones become public build pieces and which ones stay admin-only.
 
-Thank you Blaxxun for ServerSync!
+It does not add new prefabs. It helps you harness the prefabs that are already there.
 
-ServerSync
-==========
+## Why Use It
 
-Bundling the dll
-----------------
+- Open useful vanilla and modded prefabs without shipping another hard-coded prefab dump.
+- Keep normal players on curated public build tabs while giving admins debug-only review tabs.
+- Replace MoreVanillaBuildPrefabs-style public unlocks with YAML policy files you can review, copy, and override.
+- Use MVBP-informed defaults for categories, requirements, placement flags, snap fixes, and icon behavior where those defaults are known.
+- Keep the server as the source of truth through ServerSync, so clients receive the active prefab policy and localization text.
+- Avoid Hammer clutter from runtime-only objects such as effects, projectiles, ragdolls, creatures, humanoids, and item drops.
 
-You need to ensure the dll is available to your mod.
+## Requirements
 
-Including the dll is best done via ILRepack (https://github.com/ravibpatel/ILRepack.Lib.MSBuild.Task). You can load this package (ILRepack.Lib.MSBuild.Task) from NuGet.
+- BepInExPack Valheim
+- Jotunn 2.29.1 or newer compatible 2.29.x build
 
-Then create a file ILRepack.targets in your project folder. File content:
+Jotunn is a hard dependency. HarnessPrefabs uses Jotunn's PieceManager for Hammer integration and RenderManager for prefab icon snapshots.
+
+## What It Does
+
+HarnessPrefabs builds a safe review workflow around hidden prefabs:
+
+1. Discover buildable-looking prefabs from Valheim and loaded mods.
+2. Ignore prefabs that are unsafe for Hammer placement, such as characters, item drops, spawners, runtime effects, projectiles, ragdolls, and similar controller objects.
+3. Seed defaults from reviewed MoreVanillaBuildPrefabs data when a prefab is known there.
+4. Classify the rest into public or admin categories based on components and prefab shape.
+5. Write reference YAML files for review.
+6. Apply only the overrides you choose to write.
+7. Sync the active policy from the server to clients.
+
+This makes it useful both as a MoreVanillaBuildPrefabs replacement for curated public pieces and as an admin review tool for larger modpacks.
+
+## Hammer Tabs
+
+Public tabs use existing Valheim categories where possible:
+
+- `Misc`
+- `Crafting`
+- `Building`
+- `BuildingStonecutter`
+- `Furniture`
+
+Admin-only tabs are added only for admin clients while Valheim `debugmode` is enabled:
+
+- `Harness Nature`
+- `Harness Structures`
+- `Harness Props`
+
+The client-side `Show Harness Tabs` config can hide Harness admin tabs even while debugmode is on.
+
+## Default Classification
+
+Known MVBP public pieces default to public access. Known MVBP admin-style nature and prop pieces default to Harness admin tabs.
+
+General classification uses prefab components and names:
+
+- `Harness Nature`: plants, pickables, trees, logs, rocks, ore rocks, crops, and natural static prefabs.
+- `Harness Structures`: walls, floors, arches, pillars, stairs, gates, doors, containers, portals, beds, crafting stations, fires, ships, carts, destructibles, and other build-like interactives.
+- `Harness Props`: decor, static props, banners, rugs, tables, chairs, statues, treasure, CreatorShop-style props, clutter, fragments, and LOD-like objects.
+
+Runtime objects are intentionally ignored. Prefabs named `fx_*`, `vfx_*`, or `sfx_*`, MVBP effect defaults, and prefabs with components such as `TimedDestruction`, `Aoe`, `CamShaker`, `Projectile`, or `Ragdoll` are not written to reference files and are not added to Hammer tabs.
+
+Prefabs with `ItemDrop`, `Humanoid`, or `Character` anywhere in their hierarchy are ignored.
+
+## Policy Files
+
+HarnessPrefabs stores policy files under:
+
+```text
+BepInEx/config/HarnessPrefabs/
 ```
-<?xml version="1.0" encoding="utf-8"?>
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <Target Name="ILRepacker" AfterTargets="Build">
-        <ItemGroup>
-            <InputAssemblies Include="$(TargetPath)" />
-            <InputAssemblies Include="$(OutputPath)\ServerSync.dll" />
-        </ItemGroup>
-        <ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
-    </Target>
-</Project>
+
+Editable override files:
+
+```text
+prefabs.yml
+prefabs_*.yml
 ```
 
-Using the ServerSync
---------------------
+Generated review files:
 
-Declare a variable:
-
-`ServerSync.ConfigSync configSync = new ServerSync.ConfigSync("my.mod.guid") { DisplayName = "My Mod Name", CurrentVersion = "1.2.3", MinimumRequiredVersion = "1.2.0" };`
-
-All of DisplayName, CurrentVersion and MinimumRequiredVersion are optional.
-If CurrentVersion is specified, then the user will see a warning in their BepInEx log if the server version does not match the client version.
-If also MinimumRequiredVersion is specified and the client has an older version than the servers MinimumRequiredVersion, the client will be immediately disconnected and see an error message, explaining why.
-To display a friendly name for your mod in the error messages, specify DisplayName, otherwise the primary identifier will be used.
-Also note that the primary identifier (I propose using the GUID, "my.mod.guid") should never be changed (changing it will break backwards compatibility completely).
-
-There are two public methods on the ServerSync.ConfigSync class:
-
-- `AddConfigEntry<T>(ConfigEntry<T> configEntry)`
-
-  Registers a BepInEx ConfigEntry to be synchronized.
-
-- `AddLockingConfigEntry<T>(ConfigEntry<T> lockingConfig) where T : IConvertible`
-
-  Registers a BepInEx ConfigEntry to be synchronized, whose value determines whether the config is locked. If the value is zero when converted to integer, the config is not locked. Otherwise it is locked.
-  This method must be called at most once. If not called at all, the config will never be locked.
-
-Useful properties:
-
-- `static bool ProcessingServerUpdate`
-
-  The mod is receiving and applying configs from the server. Used internally to avoid config writing loops.
-
-- `bool IsSourceOfTruth`
-
-  Whether the local config is currently being used. False if a remote config is currently applied.
-
-Additionally, there is a class `ServerSync.CustomSyncedValue<T>(ConfigSync, string Identifier, T value = default)` to synchronize arbitrary data (more precisely: all data which Valheims native serialization supports).
-This class registers itself to the passed ConfigSync instance upon instantiation.
-It provides a Value property and a ValueChanged event handler.
-The Identifier must be unique for the given ConfigSync instance.
-
-
-Handy config function
----------------------
-
-To avoid manually adding each config entry to the ConfigSync instance, I propose to add a simple wrapper `config()` (with the same signature as `Config.Bind()`) to your UnityBasePlugin class:
-
+```text
+prefabs.reference.yml
+prefabs.full.yml
 ```
-ConfigEntry<T> config<T>(string group, string name, T value, ConfigDescription description, bool synchronizedSetting = true)
-{
-    ConfigEntry<T> configEntry = Config.Bind(group, name, value, description);
 
-    SyncedConfigEntry<T> syncedConfigEntry = configSync.AddConfigEntry(configEntry);
-    syncedConfigEntry.SynchronizedConfig = synchronizedSetting;
+`prefabs.yml` is created automatically. Extra files such as `prefabs_public.yml` or `prefabs_admin.yml` are loaded after the base file and can override the same prefab entries.
 
-    return configEntry;
-}
+Do not edit `prefabs.reference.yml` or `prefabs.full.yml` directly. Copy entries from them into `prefabs.yml` or `prefabs_*.yml`.
 
-ConfigEntry<T> config<T>(string group, string name, T value, string description, bool synchronizedSetting = true) => config(group, name, value, new ConfigDescription(description), synchronizedSetting);
+## Minimal Overrides
+
+Override files use a top-level YAML list. You can copy only the fields you want to change:
+
+```yaml
+- prefab: blackmarble_1x1
+  enabled: true
+  category: BuildingStonecutter
+  requirements:
+    - BlackMarble: 2
+
+- prefab: GoblinTotem
+  enabled: false
 ```
+
+`enabled: true` exposes a prefab. Public categories expose it to normal clients. Harness categories expose it only to admins in debugmode.
+
+Missing fields keep the generated default.
+
+## Full Review Schema
+
+Run this in the in-game console to write a full scaffold:
+
+```text
+harnessprefabs:full
+```
+
+The full scaffold includes fields that are useful for review:
+
+```yaml
+- prefab: barrell
+  enabled: true
+  category: Furniture
+  displayName: Barrel
+  description: ""
+  craftingStation: Workbench
+  requirements:
+    - FineWood: 2
+    - Iron: 1
+  flags: false, false, false, true # clipEverything, clipGround, allowedInDungeons, canBeRemoved
+  components: [Piece, WearNTear] # review metadata only
+```
+
+`components` is a reference hint from discovery and is ignored as an edit field.
+
+## Localization
+
+Server-synced localization files live under:
+
+```text
+BepInEx/config/HarnessPrefabs/localization/
+```
+
+`English.yml` is created automatically as a template. Add language files with Valheim language names such as `Korean.yml`, `German.yml`, or `Turkish.yml`.
+
+Use localization tokens in prefab policy entries:
+
+```yaml
+- prefab: barrell
+  enabled: true
+  category: Furniture
+  displayName: $ph_piece_barrell
+  description: $ph_piece_barrell_desc
+```
+
+```yaml
+$ph_piece_barrell: "Barrel"
+$ph_piece_barrell_desc: "A decorative barrel."
+```
+
+English is applied first as fallback, then the client's selected language is layered over it.
+
+## Icons And Placement
+
+HarnessPrefabs uses Jotunn RenderManager to generate missing Hammer icons. The render path follows the MVBP-style isometric snapshot setup and handles known special cases such as `PickableItem` random item previews.
+
+For prefabs with awkward or sparse colliders, HarnessPrefabs applies placement-only ghost helpers based on reviewed MVBP defaults. These helpers affect Hammer preview placement without adding extra helper colliders to the final placed object.
+
+## Prefab Tweaks
+
+The `2 - Prefab Tweaks` config section contains optional synchronized tweaks:
+
+- `Trailership VikingShip Speed Ratio`: scales Trailership movement relative to VikingShip. Default is `0.66`; accepted range is `0.5` to `1.0`.
+- `Enable Bed Patches`: off by default. Adds bed/spawn behavior to supported MVBP-style bed prefabs.
+- `Fermenter Patch Duration Percent`: `0` disables the dvergrprops_barrel fermenter patch. `1` to `100` enables it and sets fermentation duration as a percentage of the vanilla fermenter.
+
+Bed and fermenter tweaks are intentionally marked unsafe because disabling the mod later can affect placed-world state such as spawn points or fermenting contents.
+
+## Strengths
+
+- Curated defaults with local control: MVBP knowledge is used as a starting point, but YAML remains the final policy.
+- Admin review without player clutter: Harness tabs exist only for admins in debugmode and can be hidden client-side.
+- Server-authoritative policy: active overrides and localization can be synchronized to clients.
+- Modpack friendly discovery: prefabs are grouped by owner where possible, making large reference files easier to review.
+- Safer Hammer scope: runtime effects, creatures, item drops, and spawner/controller objects stay outside the build table.
+- Focused compatibility: Jotunn handles category integration and icon rendering instead of private UI hacks.
+
+## Suggested Workflow
+
+1. Start the server or single-player world with HarnessPrefabs installed.
+2. Let it generate `prefabs.reference.yml`.
+3. Copy wanted entries into `prefabs.yml` or a `prefabs_*.yml` file.
+4. Use public categories for normal-player pieces.
+5. Use Harness categories for admin-only review/build pieces.
+6. Run `harnessprefabs:full` only when you need display names, descriptions, flags, or component metadata for deeper review.
