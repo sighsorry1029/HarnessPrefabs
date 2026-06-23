@@ -170,7 +170,7 @@
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
         <None Include="Libs\Jotunn.dll"/>
-        <Content Include="LICENSE.txt"/>
+        <Content Include="LICENSE"/>
         <Content Include="README.md"/>
         <Content Include="Thunderstore\CHANGELOG.md"/>
         <Content Include="Thunderstore\icon.png"/>
