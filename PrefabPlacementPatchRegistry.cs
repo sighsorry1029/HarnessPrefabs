@@ -66,8 +66,7 @@ internal static class PrefabPlacementPatchRegistry
         collider.size = WorldSizeToLocalSize(ghost.transform, bounds.size);
         collider.isTrigger = false;
 
-        HarnessPrefabsPlacementPatchMarker marker = ghost.AddComponent<HarnessPrefabsPlacementPatchMarker>();
-        marker.PrefabName = prefabName;
+        ghost.AddComponent<HarnessPrefabsPlacementPatchMarker>();
 
         if (HarnessPrefabsPlugin.Verbose)
         {
@@ -133,5 +132,4 @@ internal static class PrefabPlacementPatchRegistry
 
 internal sealed class HarnessPrefabsPlacementPatchMarker : MonoBehaviour
 {
-    public string PrefabName { get; set; } = "";
 }

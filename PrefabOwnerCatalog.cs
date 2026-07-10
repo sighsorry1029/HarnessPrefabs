@@ -36,14 +36,30 @@ internal static class PrefabOwnerCatalog
     private static CatalogState _vanillaState;
     private static string _loadedModSignature = "";
 
-    public static string GetOwnerName(string prefabName)
+    public static IReadOnlyDictionary<string, string> GetOwnerNames(IEnumerable<string> prefabNames)
     {
-        if (IsVanillaPrefab(prefabName))
+        EnsureVanillaCatalogLoaded();
+        EnsureModMappingsLoaded();
+
+        Dictionary<string, string> owners = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string prefabName in prefabNames
+                     .Where(name => !string.IsNullOrWhiteSpace(name))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            return VanillaOwnerName;
+            if (_vanillaState == CatalogState.Loaded && VanillaPrefabNames.Contains(prefabName))
+            {
+                owners[prefabName] = VanillaOwnerName;
+                continue;
+            }
+
+            owners[prefabName] = ResolveLoadedModOwner(prefabName);
         }
 
-        EnsureModMappingsLoaded();
+        return owners;
+    }
+
+    private static string ResolveLoadedModOwner(string prefabName)
+    {
         foreach (string candidate in EnumerateLookupCandidates(prefabName))
         {
             if (ModPrefabOwners.TryGetValue(candidate, out string ownerName) &&
@@ -54,14 +70,6 @@ internal static class PrefabOwnerCatalog
         }
 
         return UnknownOwnerName;
-    }
-
-    private static bool IsVanillaPrefab(string prefabName)
-    {
-        EnsureVanillaCatalogLoaded();
-        return _vanillaState == CatalogState.Loaded &&
-               !string.IsNullOrWhiteSpace(prefabName) &&
-               VanillaPrefabNames.Contains(prefabName);
     }
 
     private static void EnsureVanillaCatalogLoaded()

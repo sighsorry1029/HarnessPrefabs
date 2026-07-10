@@ -7,6 +7,7 @@ using HarmonyLib;
 using Jotunn.Managers;
 using ServerSync;
 using UnityEngine;
+using ReloadTimer = System.Timers.Timer;
 
 namespace HarnessPrefabs;
 
@@ -15,11 +16,12 @@ namespace HarnessPrefabs;
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.0";
+    internal const string ModVersion = "1.0.1";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string JotunnGuid = "com.jotunn.jotunn";
     internal const string JotunnVersion = "2.29.1";
+    private const double ReloadDebounceMilliseconds = 500d;
 
     private static readonly string ConfigFileName = $"{ModGuid}.cfg";
     private static readonly string ConfigFileFullPath = Path.Combine(Paths.ConfigPath, ConfigFileName);
@@ -35,8 +37,8 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     private readonly object _reloadLock = new();
     private FileSystemWatcher? _configWatcher;
     private FileSystemWatcher? _rulesWatcher;
-    private DateTime _lastConfigReloadTime;
-    private DateTime _lastRulesReloadTime;
+    private ReloadTimer? _configReloadTimer;
+    private ReloadTimer? _rulesReloadTimer;
     private string? _lastConfigFileText;
     private static bool _sourceOfTruthFileModeReady;
 
@@ -82,7 +84,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
             new ConfigDescription(
                 "Controls Trailership movement speed relative to VikingShip. 0.5 is half speed, 1.0 matches VikingShip.",
                 new AcceptableValueRange<float>(0.5f, 1f)));
-        TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.Refresh("Trailership speed ratio changed");
+        TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
         EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
         UnsafeFermenterPatchDurationPercent = BindSynced(
             "2 - Prefab Tweaks",
@@ -116,6 +118,8 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         SaveConfig(reload: false);
         _configWatcher?.Dispose();
         _rulesWatcher?.Dispose();
+        _configReloadTimer?.Dispose();
+        _rulesReloadTimer?.Dispose();
         PrefabLocalizationOverrideManager.Dispose();
         SyncedRules.ValueChanged -= OnSyncedRulesChanged;
         SyncedConfig.SourceOfTruthChanged -= OnSourceOfTruthChanged;
@@ -179,27 +183,30 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 
     private void SetupConfigWatcher()
     {
+        _configReloadTimer ??= CreateReloadTimer(ReadConfigValues);
         _configWatcher = new FileSystemWatcher(Paths.ConfigPath, ConfigFileName)
         {
             IncludeSubdirectories = false,
             SynchronizingObject = ThreadingHelper.SynchronizingObject,
             EnableRaisingEvents = true
         };
-        _configWatcher.Changed += ReadConfigValues;
-        _configWatcher.Created += ReadConfigValues;
-        _configWatcher.Renamed += ReadConfigValues;
+        _configWatcher.Changed += ScheduleConfigReload;
+        _configWatcher.Created += ScheduleConfigReload;
+        _configWatcher.Renamed += ScheduleConfigReload;
     }
 
     private void SetupRuleWatcher()
     {
         if (!IsSourceOfTruth)
         {
+            _rulesReloadTimer?.Stop();
             _rulesWatcher?.Dispose();
             _rulesWatcher = null;
             return;
         }
 
         _rulesWatcher?.Dispose();
+        _rulesReloadTimer ??= CreateReloadTimer(ReadRuleValues);
         string rulesDirectory = PrefabRuleStore.RulesDirectory;
         Directory.CreateDirectory(rulesDirectory);
         _rulesWatcher = new FileSystemWatcher(rulesDirectory, "*.*")
@@ -208,19 +215,29 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
             SynchronizingObject = ThreadingHelper.SynchronizingObject,
             EnableRaisingEvents = true
         };
-        _rulesWatcher.Changed += ReadRuleValues;
-        _rulesWatcher.Created += ReadRuleValues;
-        _rulesWatcher.Deleted += ReadRuleValues;
-        _rulesWatcher.Renamed += ReadRuleValues;
+        _rulesWatcher.Changed += ScheduleRuleReload;
+        _rulesWatcher.Created += ScheduleRuleReload;
+        _rulesWatcher.Deleted += ScheduleRuleReload;
+        _rulesWatcher.Renamed += ScheduleRuleReload;
     }
 
-    private void ReadConfigValues(object sender, FileSystemEventArgs e)
+    private void ScheduleConfigReload(object sender, FileSystemEventArgs e)
     {
-        if (IsTooSoon(ref _lastConfigReloadTime))
+        RestartTimer(_configReloadTimer);
+    }
+
+    private void ScheduleRuleReload(object sender, FileSystemEventArgs e)
+    {
+        if (!IsSourceOfTruth || !PrefabRuleStore.IsOverrideFileEvent(e))
         {
             return;
         }
 
+        RestartTimer(_rulesReloadTimer);
+    }
+
+    private void ReadConfigValues(object sender, System.Timers.ElapsedEventArgs e)
+    {
         lock (_reloadLock)
         {
             if (!File.Exists(ConfigFileFullPath))
@@ -248,9 +265,9 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         }
     }
 
-    private void ReadRuleValues(object sender, FileSystemEventArgs e)
+    private void ReadRuleValues(object sender, System.Timers.ElapsedEventArgs e)
     {
-        if (!PrefabRuleStore.IsOverrideFileEvent(e) || IsTooSoon(ref _lastRulesReloadTime) || !IsSourceOfTruth)
+        if (!IsSourceOfTruth)
         {
             return;
         }
@@ -265,8 +282,10 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                     return;
                 }
 
-                PrefabRuleStore.PublishRulesFromDisk();
-                PrefabBuildManager.RefreshFromCachedRules("prefab rules file reloaded");
+                if (PrefabRuleStore.PublishRulesFromDisk())
+                {
+                    PrefabBuildManager.RefreshFromCachedRules("prefab rules file reloaded");
+                }
             }
             catch (Exception ex)
             {
@@ -275,16 +294,26 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         }
     }
 
-    private static bool IsTooSoon(ref DateTime lastReload)
+    private static ReloadTimer CreateReloadTimer(System.Timers.ElapsedEventHandler handler)
     {
-        DateTime now = DateTime.Now;
-        if ((now - lastReload).TotalSeconds < 1)
+        ReloadTimer timer = new(ReloadDebounceMilliseconds)
         {
-            return true;
+            AutoReset = false,
+            SynchronizingObject = ThreadingHelper.SynchronizingObject
+        };
+        timer.Elapsed += handler;
+        return timer;
+    }
+
+    private static void RestartTimer(ReloadTimer? timer)
+    {
+        if (timer == null)
+        {
+            return;
         }
 
-        lastReload = now;
-        return false;
+        timer.Stop();
+        timer.Start();
     }
 
     private static string? ReadFileTextIfExists(string path)

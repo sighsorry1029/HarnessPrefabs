@@ -63,37 +63,7 @@ internal static class PrefabClassifier
         Child<MusicLocation>()
     };
 
-    private static readonly Type[] ExcludedRootTypes =
-    {
-        typeof(ItemDrop),
-        typeof(Humanoid),
-        typeof(Character),
-        typeof(AnimalAI),
-        typeof(CreatureSpawner),
-        typeof(SpawnArea),
-        typeof(TriggerSpawner),
-        typeof(DungeonGenerator),
-        typeof(TerrainModifier),
-        typeof(EventZone),
-        typeof(LocationProxy),
-        typeof(LootSpawner),
-        typeof(Mister),
-        typeof(Projectile),
-        typeof(Aoe),
-        typeof(CamShaker),
-        typeof(Ragdoll),
-        typeof(TombStone),
-        typeof(LiquidVolume),
-        typeof(Gibber),
-        typeof(ShipConstructor),
-        typeof(TeleportAbility),
-        typeof(Trader),
-        typeof(Fish),
-        typeof(RandomFlyingBird),
-        typeof(MusicLocation)
-    };
-
-    private static readonly Type[] ExcludedChildTypes =
+    private static readonly Type[] AlwaysExcludedChildTypes =
     {
         typeof(ItemDrop),
         typeof(Humanoid),
@@ -119,7 +89,7 @@ internal static class PrefabClassifier
         typeof(MusicLocation)
     };
 
-    private static readonly Type[] RuntimeChildTypes =
+    private static readonly Type[] RuntimeTypes =
     {
         typeof(Projectile),
         typeof(Aoe),
@@ -227,23 +197,25 @@ internal static class PrefabClassifier
             return null;
         }
 
-        if (HasExcludedComponent(prefab, hasMvbpDefault))
+        ComponentSnapshot snapshot = new(prefab);
+        if (HasExcludedComponent(snapshot, hasMvbpDefault))
         {
             return null;
         }
 
-        List<string> components = CollectComponents(prefab);
+        List<string> components = CollectComponents(snapshot);
         if (IsRuntimePrefab(name, components, hasMvbpDefault))
         {
             return null;
         }
 
-        if (components.Count == 0 && !HasRenderable(prefab))
+        bool hasRenderable = HasRenderable(snapshot);
+        if (components.Count == 0 && !hasRenderable)
         {
             return null;
         }
 
-        bool hasNetworkView = prefab.GetComponentInChildren<ZNetView>(true);
+        bool hasNetworkView = snapshot.Has(typeof(ZNetView), includeChildren: true);
         if (!hasMvbpDefault && !hasNetworkView)
         {
             return null;
@@ -275,16 +247,6 @@ internal static class PrefabClassifier
             access = PrefabAccess.Admin;
             category = BuildCategories.HarnessStructures;
         }
-        else if (components.Contains("InstanceRenderer") || IsReviewName(name))
-        {
-            access = PrefabAccess.Admin;
-            category = BuildCategories.HarnessProps;
-        }
-        else if (HasRenderable(prefab))
-        {
-            access = PrefabAccess.Admin;
-            category = BuildCategories.HarnessProps;
-        }
         else
         {
             access = PrefabAccess.Admin;
@@ -300,16 +262,16 @@ internal static class PrefabClassifier
             ClipGround = clipGround,
             AllowedInDungeons = false,
             Components = new ComponentList(components),
-            Prefab = new GameObjectRef(prefab)
+            Prefab = prefab
         };
     }
 
-    private static List<string> CollectComponents(GameObject prefab)
+    private static List<string> CollectComponents(ComponentSnapshot snapshot)
     {
         SortedSet<string> components = new(StringComparer.Ordinal);
         foreach (ComponentProbe probe in ComponentProbes)
         {
-            if (HasComponent(prefab, probe.Type, probe.IncludeChildren))
+            if (snapshot.Has(probe.Type, probe.IncludeChildren))
             {
                 components.Add(probe.Name);
             }
@@ -318,26 +280,10 @@ internal static class PrefabClassifier
         return components.ToList();
     }
 
-    private static bool HasExcludedComponent(GameObject prefab, bool hasMvbpDefault)
+    private static bool HasExcludedComponent(ComponentSnapshot snapshot, bool hasMvbpDefault)
     {
-        return HasExcludedRootComponent(prefab)
-               || HasExcludedChildComponent(prefab)
-               || (!hasMvbpDefault && HasRuntimeChildComponent(prefab));
-    }
-
-    private static bool HasExcludedRootComponent(GameObject prefab)
-    {
-        return HasAnyComponent(prefab, ExcludedRootTypes, includeChildren: false);
-    }
-
-    private static bool HasExcludedChildComponent(GameObject prefab)
-    {
-        return HasAnyComponent(prefab, ExcludedChildTypes, includeChildren: true);
-    }
-
-    private static bool HasRuntimeChildComponent(GameObject prefab)
-    {
-        return HasAnyComponent(prefab, RuntimeChildTypes, includeChildren: true);
+        return snapshot.HasAny(AlwaysExcludedChildTypes, includeChildren: true)
+               || snapshot.HasAny(RuntimeTypes, includeChildren: !hasMvbpDefault);
     }
 
     private static bool HasExcludedName(string name)
@@ -353,19 +299,6 @@ internal static class PrefabClassifier
                || name.EndsWith("_test", StringComparison.Ordinal)
                || name.IndexOf("Random", StringComparison.Ordinal) >= 0
                || name.IndexOf("random", StringComparison.Ordinal) >= 0;
-    }
-
-    private static bool HasAnyComponent(GameObject prefab, IEnumerable<Type> componentTypes, bool includeChildren)
-    {
-        return componentTypes.Any(type => HasComponent(prefab, type, includeChildren));
-    }
-
-    private static bool HasComponent(GameObject prefab, Type componentType, bool includeChildren)
-    {
-        Component component = includeChildren
-            ? prefab.GetComponentInChildren(componentType, true)
-            : prefab.GetComponent(componentType);
-        return component;
     }
 
     private static ComponentProbe Root<T>() where T : Component
@@ -392,9 +325,42 @@ internal static class PrefabClassifier
         public string Name { get; }
     }
 
-    private static bool HasRenderable(GameObject prefab)
+    private sealed class ComponentSnapshot
     {
-        return prefab.GetComponentInChildren<Renderer>(true) || prefab.GetComponentInChildren<Collider>(true);
+        private readonly Type[] _rootTypes;
+        private readonly Type[] _allTypes;
+
+        public ComponentSnapshot(GameObject prefab)
+        {
+            _rootTypes = CollectTypes(prefab.GetComponents<Component>());
+            _allTypes = CollectTypes(prefab.GetComponentsInChildren<Component>(true));
+        }
+
+        public bool Has(Type componentType, bool includeChildren)
+        {
+            Type[] types = includeChildren ? _allTypes : _rootTypes;
+            return types.Any(componentType.IsAssignableFrom);
+        }
+
+        public bool HasAny(IEnumerable<Type> componentTypes, bool includeChildren)
+        {
+            return componentTypes.Any(type => Has(type, includeChildren));
+        }
+
+        private static Type[] CollectTypes(IEnumerable<Component> components)
+        {
+            return components
+                .Where(component => component)
+                .Select(component => component.GetType())
+                .Distinct()
+                .ToArray();
+        }
+    }
+
+    private static bool HasRenderable(ComponentSnapshot snapshot)
+    {
+        return snapshot.Has(typeof(Renderer), includeChildren: true) ||
+               snapshot.Has(typeof(Collider), includeChildren: true);
     }
 
     private static bool IsRuntimePrefab(string name, IReadOnlyCollection<string> components, bool hasMvbpDefault)
@@ -447,16 +413,6 @@ internal static class PrefabClassifier
     private static bool IsDestructibleOnly(IReadOnlyCollection<string> components)
     {
         return components.Count == 1 && components.Contains("Destructible");
-    }
-
-    private static bool IsReviewName(string name)
-    {
-        string lower = name.ToLowerInvariant();
-        return lower.Contains("_lod") ||
-               lower.EndsWith("lod", StringComparison.Ordinal) ||
-               lower.Contains("clutter") ||
-               lower.Contains("fragment") ||
-               lower.Contains("frac");
     }
 
     private static bool ShouldClipEverything(string name, IReadOnlyCollection<string> components)

@@ -1,8 +1,14 @@
 # HarnessPrefabs
 
-HarnessPrefabs is a policy-driven prefab access mod for Valheim. It scans vanilla Valheim and loaded prefab-adding mods for existing prefabs that are not normally available in the Hammer build table, then lets the server decide which ones become public build pieces and which ones stay admin-only.
+Scans vanilla Valheim and loaded prefab-adding mods for existing prefabs that are not normally available in the Hammer build table, then lets the server decide which ones become public build pieces and which ones stay admin-only.
 
 It does not add new prefabs. It helps you harness the prefabs that are already there.
+
+![](https://i.ibb.co/XxXky8Kb/Screenshot-2026-06-24-230139.png) <br>
+Dvergr barrel(enhanced lod) can be used as a fermenter. Fermenting time is configurable.
+
+![](https://i.ibb.co/MkQQPHqH/Screenshot-2026-06-24-230129.png) <br>
+Trailership can be used by default. It would be available at plains. It is slightly slower(configurable) then longship but has bigger containersize.
 
 ## Why Use It
 
@@ -12,13 +18,6 @@ It does not add new prefabs. It helps you harness the prefabs that are already t
 - Use MVBP-informed defaults for categories, requirements, placement flags, snap fixes, and icon behavior where those defaults are known.
 - Keep the server as the source of truth through ServerSync, so clients receive the active prefab policy and localization text.
 - Avoid Hammer clutter from runtime-only objects such as effects, projectiles, ragdolls, creatures, humanoids, and item drops.
-
-## Requirements
-
-- BepInExPack Valheim
-- Jotunn 2.29.1 or newer compatible 2.29.x build
-
-Jotunn is a hard dependency. HarnessPrefabs uses Jotunn's PieceManager for Hammer integration and RenderManager for prefab icon snapshots.
 
 ## What It Does
 
@@ -197,3 +196,9 @@ Bed and fermenter tweaks are intentionally marked unsafe because disabling the m
 4. Use public categories for normal-player pieces.
 5. Use Harness categories for admin-only review/build pieces.
 6. Run `harnessprefabs:full` only when you need display names, descriptions, flags, or component metadata for deeper review.
+
+## Github
+Original code from
+https://github.com/searica/MoreVanillaBuildPrefabs <br>
+The mod's repo
+https://github.com/sighsorry1029/HarnessPrefabs

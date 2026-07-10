@@ -1,10 +1,10 @@
 {
   "name": "HarnessPrefabs",
-  "version_number": "1.0.0",
-  "website_url": "",
-  "description": "Unlock and govern existing Valheim and modded prefabs with server-synced YAML policy, curated MVBP-style defaults, public Hammer access, admin-only debug tabs, safer prefab filtering, and Jotunn-powered categories, icons, and placement fixes.",
+  "version_number": "1.0.1",
+  "website_url": "https://discord.gg/jkcJCq2sK5",
+  "description": "Unlock and harness existing Valheim and modded prefabs with server-synced YAML policy, public Hammer access, admin-only debug tabs, safer prefab filtering.",
   "dependencies": [
-    "denikson-BepInExPack_Valheim-5.4.2202",
+    "denikson-BepInExPack_Valheim-5.4.2333",
     "ValheimModding-Jotunn-2.29.1"
   ]
 }

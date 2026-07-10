@@ -123,7 +123,7 @@ internal static partial class MvbpPrefabDefaults
             return seed.Description;
         }
 
-        return FindMvbpPieceDescription(discovery.Prefab.Value);
+        return FindMvbpPieceDescription(discovery.Prefab);
     }
 
     private static string FindMvbpPieceDescription(GameObject? prefab, HashSet<string>? visited = null)

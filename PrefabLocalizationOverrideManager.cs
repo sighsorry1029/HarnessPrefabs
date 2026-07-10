@@ -7,6 +7,7 @@ using HarmonyLib;
 using ServerSync;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+using ReloadTimer = System.Timers.Timer;
 
 namespace HarnessPrefabs;
 
@@ -15,6 +16,7 @@ internal static class PrefabLocalizationOverrideManager
     private const string DomainName = "localization";
     private const string DefaultLanguageFileName = "English.yml";
     private const string SyncedPayloadKey = "localization-yaml";
+    private const double ReloadDebounceMilliseconds = 500d;
 
     private static readonly object StateLock = new();
     private static readonly IDeserializer Deserializer = new DeserializerBuilder()
@@ -28,7 +30,7 @@ internal static class PrefabLocalizationOverrideManager
     private static LocalizationPayload _activePayload = new();
     private static CustomSyncedValue<string>? _syncedPayload;
     private static FileSystemWatcher? _watcher;
-    private static DateTime _lastLocalizationReloadTime;
+    private static ReloadTimer? _reloadTimer;
     private static string? _lastParsedPayload;
 
     private static readonly Dictionary<string, Dictionary<string, string?>> OriginalTranslationsByLanguage = new(StringComparer.OrdinalIgnoreCase);
@@ -46,12 +48,14 @@ internal static class PrefabLocalizationOverrideManager
     {
         if (!HarnessPrefabsPlugin.IsSourceOfTruth)
         {
+            _reloadTimer?.Stop();
             _watcher?.Dispose();
             _watcher = null;
             return;
         }
 
         _watcher?.Dispose();
+        _reloadTimer ??= CreateReloadTimer();
         EnsureDirectoryAndDefaultFile();
         _watcher = new FileSystemWatcher(LocalizationDirectory, "*.*")
         {
@@ -59,10 +63,10 @@ internal static class PrefabLocalizationOverrideManager
             SynchronizingObject = ThreadingHelper.SynchronizingObject,
             EnableRaisingEvents = true
         };
-        _watcher.Changed += ReadLocalizationValues;
-        _watcher.Created += ReadLocalizationValues;
-        _watcher.Deleted += ReadLocalizationValues;
-        _watcher.Renamed += ReadLocalizationValues;
+        _watcher.Changed += ScheduleLocalizationReload;
+        _watcher.Created += ScheduleLocalizationReload;
+        _watcher.Deleted += ScheduleLocalizationReload;
+        _watcher.Renamed += ScheduleLocalizationReload;
     }
 
     public static void Dispose()
@@ -74,27 +78,40 @@ internal static class PrefabLocalizationOverrideManager
 
         _watcher?.Dispose();
         _watcher = null;
+        _reloadTimer?.Dispose();
+        _reloadTimer = null;
     }
 
-    public static void ReloadFromDiskAndSync()
+    public static bool ReloadFromDiskAndSync()
     {
         if (!HarnessPrefabsPlugin.IsSourceOfTruth)
         {
-            ApplySyncedPayload(_syncedPayload?.Value ?? "");
-            return;
+            return ApplySyncedPayload(_syncedPayload?.Value ?? "");
         }
 
-        EnsureDirectoryAndDefaultFile();
-        LocalizationPayload payload = LoadPayloadFromDisk();
-        string serializedPayload = SerializePayload(payload);
+        LocalizationPayload payload;
+        string serializedPayload;
+        try
+        {
+            EnsureDirectoryAndDefaultFile();
+            payload = LoadPayloadFromDisk();
+            serializedPayload = SerializePayload(payload);
+            PublishPayload(serializedPayload);
+        }
+        catch (Exception ex)
+        {
+            HarnessPrefabsPlugin.Log.LogError($"Failed to reload localization YAML. Keeping the last known good localization. Error: {ex.Message}");
+            return false;
+        }
+
         lock (StateLock)
         {
             _activePayload = payload;
             _lastParsedPayload = serializedPayload;
         }
 
-        PublishPayload(serializedPayload);
         ApplyCurrentLocalization();
+        return true;
     }
 
     public static void ApplyCurrentLocalization()
@@ -131,34 +148,39 @@ internal static class PrefabLocalizationOverrideManager
         AppliedKeysByLanguage[languageKey] = new HashSet<string>(translations.Keys, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static void ReadLocalizationValues(object sender, FileSystemEventArgs e)
+    private static void ScheduleLocalizationReload(object sender, FileSystemEventArgs e)
     {
-        if (!HarnessPrefabsPlugin.IsSourceOfTruth || !IsLocalizationFile(e.FullPath) || IsTooSoon())
+        if (!HarnessPrefabsPlugin.IsSourceOfTruth || !IsLocalizationFile(e.FullPath))
         {
             return;
         }
 
-        try
+        _reloadTimer?.Stop();
+        _reloadTimer?.Start();
+    }
+
+    private static void ReadLocalizationValues(object sender, System.Timers.ElapsedEventArgs e)
+    {
+        if (!HarnessPrefabsPlugin.IsSourceOfTruth)
         {
-            ReloadFromDiskAndSync();
-            HarnessPrefabsPlugin.Log.LogInfo("Localization YAML reload complete.");
+            return;
         }
-        catch (Exception ex)
+
+        if (ReloadFromDiskAndSync())
         {
-            HarnessPrefabsPlugin.Log.LogError($"Error reloading localization YAML files: {ex}");
+            HarnessPrefabsPlugin.Log.LogInfo("Localization YAML reload complete.");
         }
     }
 
-    private static bool IsTooSoon()
+    private static ReloadTimer CreateReloadTimer()
     {
-        DateTime now = DateTime.Now;
-        if ((now - _lastLocalizationReloadTime).TotalSeconds < 1)
+        ReloadTimer timer = new(ReloadDebounceMilliseconds)
         {
-            return true;
-        }
-
-        _lastLocalizationReloadTime = now;
-        return false;
+            AutoReset = false,
+            SynchronizingObject = ThreadingHelper.SynchronizingObject
+        };
+        timer.Elapsed += ReadLocalizationValues;
+        return timer;
     }
 
     private static void OnSyncedPayloadChanged()
@@ -168,17 +190,21 @@ internal static class PrefabLocalizationOverrideManager
             return;
         }
 
-        ApplySyncedPayload(_syncedPayload?.Value ?? "");
+        _ = ApplySyncedPayload(_syncedPayload?.Value ?? "");
     }
 
-    private static void ApplySyncedPayload(string payload)
+    private static bool ApplySyncedPayload(string payload)
     {
         if (string.Equals(_lastParsedPayload, payload, StringComparison.Ordinal))
         {
-            return;
+            return false;
         }
 
-        LocalizationPayload localizationPayload = DeserializePayload(payload, "synced localization payload");
+        if (!TryDeserializePayload(payload, "synced localization payload", out LocalizationPayload localizationPayload))
+        {
+            return false;
+        }
+
         lock (StateLock)
         {
             _activePayload = localizationPayload;
@@ -186,6 +212,7 @@ internal static class PrefabLocalizationOverrideManager
         }
 
         ApplyCurrentLocalization();
+        return true;
     }
 
     private static void PublishPayload(string payload)
@@ -249,8 +276,7 @@ internal static class PrefabLocalizationOverrideManager
         }
         catch (Exception ex)
         {
-            HarnessPrefabsPlugin.Log.LogError($"Failed to parse {source} from '{path}': {ex.Message}");
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            throw new InvalidDataException($"Failed to parse {source} from '{path}': {ex.Message}", ex);
         }
     }
 
@@ -282,22 +308,25 @@ internal static class PrefabLocalizationOverrideManager
         return Serializer.Serialize(payload);
     }
 
-    private static LocalizationPayload DeserializePayload(string payload, string source)
+    private static bool TryDeserializePayload(string payload, string source, out LocalizationPayload localizationPayload)
     {
         if (string.IsNullOrWhiteSpace(payload))
         {
-            return new LocalizationPayload();
+            localizationPayload = new LocalizationPayload();
+            return true;
         }
 
         try
         {
             LocalizationPayload? parsed = Deserializer.Deserialize<LocalizationPayload>(payload);
-            return NormalizePayload(parsed, source);
+            localizationPayload = NormalizePayload(parsed, source);
+            return true;
         }
         catch (Exception ex)
         {
             HarnessPrefabsPlugin.Log.LogError($"Failed to parse {source}: {ex.Message}");
-            return new LocalizationPayload();
+            localizationPayload = null!;
+            return false;
         }
     }
 

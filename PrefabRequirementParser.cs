@@ -17,21 +17,38 @@ internal static class PrefabRequirementParser
         return requirements
             .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(ParseOne)
-            .Where(requirement => !string.IsNullOrWhiteSpace(requirement.Item))
             .ToList();
     }
 
     public static List<PrefabRequirement> Clone(IEnumerable<PrefabRequirement>? requirements)
     {
-        return requirements?
-                   .Where(requirement => requirement != null && !string.IsNullOrWhiteSpace(requirement.Item))
-                   .Select(requirement => new PrefabRequirement
-                   {
-                       Item = requirement.Item.Trim(),
-                       Amount = Math.Max(1, requirement.Amount)
-                   })
-                   .ToList() ??
-               new List<PrefabRequirement>();
+        List<PrefabRequirement> cloned = new();
+        if (requirements == null)
+        {
+            return cloned;
+        }
+
+        foreach (PrefabRequirement requirement in requirements)
+        {
+            string item = requirement?.Item?.Trim() ?? "";
+            if (item.Length == 0)
+            {
+                throw new FormatException("Prefab requirement item names cannot be empty.");
+            }
+
+            if (requirement!.Amount < 1)
+            {
+                throw new FormatException($"Prefab requirement '{item}' must have a positive integer amount.");
+            }
+
+            cloned.Add(new PrefabRequirement
+            {
+                Item = item,
+                Amount = requirement.Amount
+            });
+        }
+
+        return cloned;
     }
 
     private static PrefabRequirement ParseOne(string entry)
@@ -39,20 +56,34 @@ internal static class PrefabRequirementParser
         int separator = entry.IndexOfAny(new[] { ',', ':', '=' });
         if (separator < 0)
         {
+            string singleItem = entry.Trim();
+            if (singleItem.Length == 0)
+            {
+                throw new FormatException("Prefab requirement item names cannot be empty.");
+            }
+
             return new PrefabRequirement
             {
-                Item = entry.Trim(),
+                Item = singleItem,
                 Amount = 1
             };
         }
 
-        int amount = 1;
-        int.TryParse(entry.Substring(separator + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out amount);
+        string item = entry.Substring(0, separator).Trim();
+        if (item.Length == 0)
+        {
+            throw new FormatException("Prefab requirement item names cannot be empty.");
+        }
+
+        if (!int.TryParse(entry.Substring(separator + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int amount) || amount < 1)
+        {
+            throw new FormatException($"Prefab requirement '{item}' must have a positive integer amount.");
+        }
 
         return new PrefabRequirement
         {
-            Item = entry.Substring(0, separator).Trim(),
-            Amount = Math.Max(1, amount)
+            Item = item,
+            Amount = amount
         };
     }
 }

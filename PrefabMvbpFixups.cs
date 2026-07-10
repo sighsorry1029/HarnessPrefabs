@@ -20,7 +20,18 @@ internal static class PrefabMvbpFixups
         }
 
         bool hasMarker = prefab.GetComponent<HarnessPrefabsMvbpFixupMarker>();
-        if (hasMarker && !prefab.name.Equals("Trailership", StringComparison.Ordinal))
+        if (prefab.name.Equals("Trailership", StringComparison.Ordinal))
+        {
+            bool staticFixupsComplete = ApplyTrailershipFixup(prefab, applyStaticFixups: !hasMarker);
+            if (staticFixupsComplete && !hasMarker)
+            {
+                prefab.AddComponent<HarnessPrefabsMvbpFixupMarker>();
+            }
+
+            return;
+        }
+
+        if (hasMarker)
         {
             return;
         }
@@ -74,9 +85,6 @@ internal static class PrefabMvbpFixups
                     new Vector3(0.65f, 0.8f, -0.35f),
                     new Vector3(-0.65f, 0.8f, 0.35f),
                     new Vector3(-0.65f, 0.8f, -0.35f));
-
-            case "Trailership":
-                return ApplyTrailershipFixup(prefab);
 
             case "blackmarble_column_3":
                 for (float y = -4f; y <= 4f; y += 2f)
@@ -471,75 +479,81 @@ internal static class PrefabMvbpFixups
         return false;
     }
 
-    private static bool ApplyTrailershipFixup(GameObject prefab)
+    private static bool ApplyTrailershipFixup(GameObject prefab, bool applyStaticFixups)
     {
-        bool applied = false;
         GameObject vikingShip = ZNetScene.instance ? ZNetScene.instance.GetPrefab("VikingShip") : null;
+        bool staticFixupsComplete = !applyStaticFixups;
 
-        MeshFilter trailerHull = FindDeepChild(prefab.transform, "hull")?.GetComponent<MeshFilter>();
-        MeshFilter vikingHull = vikingShip ? FindDeepChild(vikingShip.transform, "hull")?.GetComponent<MeshFilter>() : null;
-        if (trailerHull && vikingHull)
+        if (applyStaticFixups)
         {
-            trailerHull.mesh = vikingHull.mesh;
-            applied = true;
-        }
-
-        GameObject shield = ZNetScene.instance ? ZNetScene.instance.GetPrefab("ShieldBanded") : null;
-        MeshRenderer shieldRenderer = shield ? shield.GetComponentInChildren<MeshRenderer>(true) : null;
-        Material shieldMaterial = shieldRenderer ? shieldRenderer.material : null;
-        Transform storage = prefab.transform.Find("ship/visual/Customize/storage");
-        if (shieldMaterial && storage)
-        {
-            for (int i = 0; i < storage.childCount; i++)
+            MeshFilter trailerHull = FindDeepChild(prefab.transform, "hull")?.GetComponent<MeshFilter>();
+            MeshFilter vikingHull = vikingShip ? FindDeepChild(vikingShip.transform, "hull")?.GetComponent<MeshFilter>() : null;
+            if (trailerHull && vikingHull && vikingHull.sharedMesh)
             {
-                Transform child = storage.GetChild(i);
-                MeshRenderer renderer = child && child.name.StartsWith("Shield", StringComparison.Ordinal)
-                    ? child.GetComponent<MeshRenderer>()
-                    : null;
-                if (renderer)
+                trailerHull.sharedMesh = vikingHull.sharedMesh;
+            }
+
+            GameObject shield = ZNetScene.instance ? ZNetScene.instance.GetPrefab("ShieldBanded") : null;
+            staticFixupsComplete = vikingShip && shield;
+            MeshRenderer shieldRenderer = shield ? shield.GetComponentInChildren<MeshRenderer>(true) : null;
+            Material shieldMaterial = shieldRenderer ? shieldRenderer.sharedMaterial : null;
+            Transform storage = prefab.transform.Find("ship/visual/Customize/storage");
+            if (shieldMaterial && storage)
+            {
+                for (int i = 0; i < storage.childCount; i++)
                 {
-                    renderer.material = shieldMaterial;
-                    applied = true;
+                    Transform child = storage.GetChild(i);
+                    MeshRenderer renderer = child && child.name.StartsWith("Shield", StringComparison.Ordinal)
+                        ? child.GetComponent<MeshRenderer>()
+                        : null;
+                    if (renderer)
+                    {
+                        renderer.sharedMaterial = shieldMaterial;
+                    }
                 }
             }
-        }
 
-        Cloth trailerSail = FindDeepChild(prefab.transform, "sail_full")?.GetComponent<Cloth>();
-        Cloth vikingSail = vikingShip ? FindDeepChild(vikingShip.transform, "sail_full")?.GetComponent<Cloth>() : null;
-        if (trailerSail && vikingSail)
-        {
-            trailerSail.coefficients = vikingSail.coefficients;
-            applied = true;
+            Cloth trailerSail = FindDeepChild(prefab.transform, "sail_full")?.GetComponent<Cloth>();
+            Cloth vikingSail = vikingShip ? FindDeepChild(vikingShip.transform, "sail_full")?.GetComponent<Cloth>() : null;
+            if (trailerSail && vikingSail)
+            {
+                trailerSail.coefficients = vikingSail.coefficients;
+            }
         }
 
         Ship ship = prefab.GetComponent<Ship>();
         if (ship)
         {
             Ship vikingShipComponent = vikingShip ? vikingShip.GetComponent<Ship>() : null;
-            Transform controlGui = prefab.transform.Find("ControlGui");
-            if (!controlGui)
+            if (applyStaticFixups)
             {
-                GameObject controlGuiObject = new("ControlGui");
-                controlGuiObject.transform.SetParent(prefab.transform, worldPositionStays: false);
-                controlGui = controlGuiObject.transform;
+                Transform controlGui = prefab.transform.Find("ControlGui");
+                if (!controlGui)
+                {
+                    GameObject controlGuiObject = new("ControlGui");
+                    controlGuiObject.transform.SetParent(prefab.transform, worldPositionStays: false);
+                    controlGui = controlGuiObject.transform;
+                }
+
+                controlGui.localPosition = new Vector3(1f, 1.696f, -6.54f);
+                ship.m_controlGuiPos = controlGui;
+                EnsureTrailershipAshlandsDamageEffects(prefab, ship, vikingShip);
             }
 
-            controlGui.localPosition = new Vector3(1f, 1.696f, -6.54f);
-            ship.m_controlGuiPos = controlGui;
             ApplyTrailershipMovementProfile(ship, vikingShipComponent);
-            EnsureTrailershipAshlandsDamageEffects(prefab, ship, vikingShip);
-            applied = true;
         }
 
-        ShipControlls controls = FindDeepChild(prefab.transform, "rudder_button")?.GetComponent<ShipControlls>();
-        Transform attachPoint = prefab.transform.Find("sit locations/sit_box (4)/attachpoint");
-        if (controls && attachPoint)
+        if (applyStaticFixups)
         {
-            controls.m_attachPoint = attachPoint;
-            applied = true;
+            ShipControlls controls = FindDeepChild(prefab.transform, "rudder_button")?.GetComponent<ShipControlls>();
+            Transform attachPoint = prefab.transform.Find("sit locations/sit_box (4)/attachpoint");
+            if (controls && attachPoint)
+            {
+                controls.m_attachPoint = attachPoint;
+            }
         }
 
-        return applied;
+        return staticFixupsComplete;
     }
 
     private static void ApplyTrailershipMovementProfile(Ship ship, Ship vikingShip)

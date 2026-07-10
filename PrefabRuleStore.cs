@@ -69,17 +69,20 @@ internal static class PrefabRuleStore
         return IsOverrideFileName(fileName);
     }
 
-    public static void PublishRulesFromDisk()
+    public static bool PublishRulesFromDisk()
     {
         if (!HarnessPrefabsPlugin.IsSourceOfTruth)
         {
-            return;
+            return false;
         }
 
-        Dictionary<string, PrefabRule> rules = BuildActiveRules(_lastDiscoveries);
-        _activeRules = rules;
-        PublishActiveRules(_lastDiscoveries);
-        WriteReferenceArtifact(_lastDiscoveries, rules);
+        if (!TryBuildActiveRulesFromDisk(_lastDiscoveries, out Dictionary<string, PrefabRule> rules))
+        {
+            return false;
+        }
+
+        CommitSourceRules(rules, _lastDiscoveries);
+        return true;
     }
 
     public static bool LoadSyncedRulesForCurrentAuthority()
@@ -96,10 +99,13 @@ internal static class PrefabRuleStore
             return false;
         }
 
+        if (!TryBuildSyncedRules(_lastDiscoveries, syncedYaml, out Dictionary<string, PrefabRule> rules))
+        {
+            return false;
+        }
+
+        _activeRules = rules;
         _lastSyncedRulesPayload = syncedYaml;
-        _activeRules = !string.IsNullOrWhiteSpace(syncedYaml)
-            ? BuildRulesFromSyncedPayload(_lastDiscoveries, syncedYaml)
-            : BuildActiveRules(_lastDiscoveries, includeDiskOverrides: false);
         return true;
     }
 
@@ -111,18 +117,32 @@ internal static class PrefabRuleStore
 
         if (HarnessPrefabsPlugin.IsSourceOfTruth)
         {
-            Dictionary<string, PrefabRule> rules = BuildActiveRules(_lastDiscoveries);
-            _activeRules = rules;
-            PublishActiveRules(_lastDiscoveries);
-            WriteReferenceArtifact(_lastDiscoveries, rules);
+            if (TryBuildActiveRulesFromDisk(_lastDiscoveries, out Dictionary<string, PrefabRule> rules))
+            {
+                CommitSourceRules(rules, _lastDiscoveries);
+            }
+            else if (_activeRules.Count == 0)
+            {
+                Dictionary<string, PrefabRule> defaults = BuildActiveRules(_lastDiscoveries, includeDiskOverrides: false);
+                CommitSourceRules(defaults, _lastDiscoveries);
+            }
+
             return;
         }
 
         string syncedYaml = _syncedRules.Value;
         if (!string.IsNullOrWhiteSpace(syncedYaml))
         {
-            _activeRules = BuildRulesFromSyncedPayload(_lastDiscoveries, syncedYaml);
-            _lastSyncedRulesPayload = syncedYaml;
+            if (TryBuildSyncedRules(_lastDiscoveries, syncedYaml, out Dictionary<string, PrefabRule> syncedRules))
+            {
+                _activeRules = syncedRules;
+                _lastSyncedRulesPayload = syncedYaml;
+            }
+            else if (_activeRules.Count == 0)
+            {
+                _activeRules = BuildActiveRules(_lastDiscoveries, includeDiskOverrides: false);
+            }
+
             return;
         }
 
@@ -183,21 +203,36 @@ internal static class PrefabRuleStore
         return NormalizeRules(rules);
     }
 
-    private static Dictionary<string, PrefabRule> BuildRulesFromEntries(IEnumerable<PrefabRuleEntry> entries)
+    private static bool TryBuildActiveRulesFromDisk(IEnumerable<PrefabDiscovery> discoveries, out Dictionary<string, PrefabRule> rules)
     {
-        Dictionary<string, PrefabRule> rules = new(StringComparer.Ordinal);
-        foreach (PrefabRuleEntry entry in entries)
+        try
         {
-            string prefabName = NormalizePrefabName(entry.Prefab);
-            if (prefabName.Length == 0)
-            {
-                continue;
-            }
-
-            rules[prefabName] = NormalizeRule(CreateRuleFromEntry(entry));
+            rules = BuildActiveRules(discoveries);
+            return true;
         }
+        catch (Exception ex)
+        {
+            rules = null!;
+            HarnessPrefabsPlugin.Log.LogError($"Failed to load prefab overrides. Keeping the last known good policy. Error: {ex.Message}");
+            return false;
+        }
+    }
 
-        return NormalizeRules(rules);
+    private static bool TryBuildSyncedRules(IEnumerable<PrefabDiscovery> discoveries, string yaml, out Dictionary<string, PrefabRule> rules)
+    {
+        try
+        {
+            rules = !string.IsNullOrWhiteSpace(yaml)
+                ? BuildRulesFromSyncedPayload(discoveries, yaml)
+                : BuildActiveRules(discoveries, includeDiskOverrides: false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            rules = null!;
+            HarnessPrefabsPlugin.Log.LogError($"Failed to load synced prefab policy. Keeping the last known good policy. Error: {ex.Message}");
+            return false;
+        }
     }
 
     private static Dictionary<string, PrefabRule> BuildRulesFromSyncedPayload(IEnumerable<PrefabDiscovery> discoveries, string yaml)
@@ -235,25 +270,6 @@ internal static class PrefabRuleStore
             };
 
         return NormalizeRule(rule);
-    }
-
-    private static PrefabRule CreateRuleFromEntry(PrefabRuleEntry entry)
-    {
-        string category = NormalizeCategory(entry.Category ?? BuildCategories.HarnessProps);
-        PrefabRule rule = new()
-        {
-            Access = ResolveAccess(entry.Enabled ?? false, category),
-            Category = category,
-            DisplayName = entry.DisplayName ?? "",
-            Description = entry.Description ?? "",
-            CraftingStation = string.IsNullOrWhiteSpace(entry.CraftingStation) ? "None" : entry.CraftingStation!.Trim(),
-            Requirements = PrefabRequirementParser.Clone(entry.Requirements),
-            CanBeRemoved = true,
-            Components = NormalizeComponents(entry.Components)
-        };
-
-        ApplyFlags(rule, entry.Flags);
-        return rule;
     }
 
     private static void ApplyOverride(PrefabRule rule, PrefabRuleEntry entry)
@@ -305,37 +321,23 @@ internal static class PrefabRuleStore
         Dictionary<string, PrefabRuleEntry> merged = new(StringComparer.Ordinal);
         foreach (string file in EnumerateOverrideFiles())
         {
-            try
+            foreach (PrefabRuleEntry entry in DeserializeEntries(File.ReadAllText(file), file))
             {
-                foreach (PrefabRuleEntry entry in DeserializeEntries(File.ReadAllText(file), file))
+                string prefabName = NormalizePrefabName(entry.Prefab);
+                if (prefabName.Length == 0)
                 {
-                    string prefabName = NormalizePrefabName(entry.Prefab);
-                    if (prefabName.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    entry.Prefab = prefabName;
-                    NormalizeEntry(entry);
-                    if (!merged.TryGetValue(prefabName, out PrefabRuleEntry existing))
-                    {
-                        merged[prefabName] = entry;
-                        continue;
-                    }
-
-                    OverlayEntry(existing, entry);
+                    continue;
                 }
-            }
-            catch (Exception ex)
-            {
-                string backup = file + ".broken." + DateTime.Now.ToString("yyyyMMddHHmmss");
-                File.Copy(file, backup, overwrite: true);
-                HarnessPrefabsPlugin.Log.LogError($"Failed to parse {file}. Backed it up to {backup}. Error: {ex.Message}");
-                if (IsBaseOverrideFile(file))
+
+                entry.Prefab = prefabName;
+                NormalizeEntry(entry);
+                if (!merged.TryGetValue(prefabName, out PrefabRuleEntry existing))
                 {
-                    WriteIfChanged(file, DefaultOverrideTemplate());
-                    HarnessPrefabsPlugin.Log.LogInfo($"Replaced invalid base override file with a fresh {OverrideFileName} template.");
+                    merged[prefabName] = entry;
+                    continue;
                 }
+
+                OverlayEntry(existing, entry);
             }
         }
 
@@ -447,18 +449,23 @@ internal static class PrefabRuleStore
         return builder.ToString();
     }
 
-    private static void PublishActiveRules(IReadOnlyCollection<PrefabDiscovery> discoveries)
+    private static void CommitSourceRules(Dictionary<string, PrefabRule> rules, IReadOnlyCollection<PrefabDiscovery> discoveries)
     {
-        string yaml = SerializePolicy(_activeRules, discoveries);
-        if (string.Equals(_lastPublishedRulesPayload, yaml, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _lastPublishedRulesPayload = yaml;
+        string yaml = SerializePolicy(rules, discoveries);
         if (!string.Equals(_syncedRules.Value, yaml, StringComparison.Ordinal))
         {
             _syncedRules.Value = yaml;
+        }
+
+        _activeRules = rules;
+        _lastPublishedRulesPayload = yaml;
+        try
+        {
+            WriteReferenceArtifact(discoveries, rules);
+        }
+        catch (Exception ex)
+        {
+            HarnessPrefabsPlugin.Log.LogWarning($"Failed to update prefab reference artifact: {ex.Message}");
         }
     }
 
@@ -499,11 +506,19 @@ internal static class PrefabRuleStore
     {
         StringBuilder builder = new();
         builder.Append(GeneratedHeader("reference"));
+        List<PrefabDiscovery> includedDiscoveries = discoveries
+            .Where(discovery => rules.ContainsKey(discovery.Name))
+            .ToList();
+        IReadOnlyDictionary<string, string> owners = PrefabOwnerCatalog.GetOwnerNames(
+            includedDiscoveries.Select(discovery => discovery.Name));
 
         bool wroteAny = false;
-        foreach (IGrouping<string, PrefabDiscovery> section in discoveries
-                     .Where(discovery => rules.ContainsKey(discovery.Name))
-                     .GroupBy(discovery => PrefabOwnerCatalog.GetOwnerName(discovery.Name), StringComparer.OrdinalIgnoreCase)
+        foreach (IGrouping<string, PrefabDiscovery> section in includedDiscoveries
+                     .GroupBy(
+                         discovery => owners.TryGetValue(discovery.Name, out string ownerName)
+                             ? ownerName
+                             : PrefabOwnerCatalog.UnknownOwnerName,
+                         StringComparer.OrdinalIgnoreCase)
                      .OrderBy(group => GetOwnerSortBucket(group.Key))
                      .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
         {
@@ -639,7 +654,7 @@ internal static class PrefabRuleStore
         return entry;
     }
 
-    private static PrefabRuleEntry ToFullEntry(string prefabName, PrefabRule rule, bool includeComponents)
+    private static PrefabRuleEntry ToFullEntry(string prefabName, PrefabRule rule)
     {
         return new PrefabRuleEntry
         {
@@ -651,15 +666,15 @@ internal static class PrefabRuleStore
             CraftingStation = rule.CraftingStation,
             Requirements = PrefabRequirementParser.Clone(rule.Requirements),
             Flags = FormatFlags(rule),
-            Components = includeComponents ? new ComponentList(rule.Components) : null
+            Components = new ComponentList(rule.Components)
         };
     }
 
-    private static List<PrefabRuleEntry> ToFullEntries(IReadOnlyDictionary<string, PrefabRule> rules, bool includeComponents)
+    private static List<PrefabRuleEntry> ToFullEntries(IReadOnlyDictionary<string, PrefabRule> rules)
     {
         Dictionary<string, PrefabRule> normalized = NormalizeRules(rules);
         return normalized
-            .Select(pair => ToFullEntry(pair.Key, pair.Value, includeComponents))
+            .Select(pair => ToFullEntry(pair.Key, pair.Value))
             .ToList();
     }
 
@@ -799,64 +814,24 @@ internal static class PrefabRuleStore
 
     private static void ApplyFlags(PrefabRule rule, string? flags)
     {
-        string[] parts = SplitTuple(flags);
-        if (parts.Length == 0)
+        if (string.IsNullOrWhiteSpace(flags))
         {
             return;
         }
 
-        if (TryParseBool(parts, 0, out bool clipEverything))
+        string[] parts = flags!.Split(',')
+            .Select(part => part.Trim())
+            .ToArray();
+        if (parts.Length != 4 || parts.Any(part => !bool.TryParse(part, out _)))
         {
-            rule.ClipEverything = clipEverything;
+            throw new InvalidDataException(
+                "Prefab flags must contain exactly four true/false values: clipEverything, clipGround, allowedInDungeons, canBeRemoved.");
         }
 
-        if (TryParseBool(parts, 1, out bool clipGround))
-        {
-            rule.ClipGround = clipGround;
-        }
-
-        if (TryParseBool(parts, 2, out bool allowedInDungeons))
-        {
-            rule.AllowedInDungeons = allowedInDungeons;
-        }
-
-        if (TryParseBool(parts, 3, out bool canBeRemoved))
-        {
-            rule.CanBeRemoved = canBeRemoved;
-        }
-    }
-
-    private static bool TryParseBool(string[] parts, int index, out bool value)
-    {
-        value = false;
-        if (index >= parts.Length || string.IsNullOrWhiteSpace(parts[index]))
-        {
-            return false;
-        }
-
-        string part = parts[index].Trim();
-        if (bool.TryParse(part, out value))
-        {
-            return true;
-        }
-
-        if (part.Equals("1", StringComparison.Ordinal) ||
-            part.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
-            part.Equals("on", StringComparison.OrdinalIgnoreCase))
-        {
-            value = true;
-            return true;
-        }
-
-        if (part.Equals("0", StringComparison.Ordinal) ||
-            part.Equals("no", StringComparison.OrdinalIgnoreCase) ||
-            part.Equals("off", StringComparison.OrdinalIgnoreCase))
-        {
-            value = false;
-            return true;
-        }
-
-        return false;
+        rule.ClipEverything = bool.Parse(parts[0]);
+        rule.ClipGround = bool.Parse(parts[1]);
+        rule.AllowedInDungeons = bool.Parse(parts[2]);
+        rule.CanBeRemoved = bool.Parse(parts[3]);
     }
 
     private static string FormatFlags(PrefabRule rule)
@@ -883,14 +858,6 @@ internal static class PrefabRuleStore
         return value ? "true" : "false";
     }
 
-    private static string[] SplitTuple(string? value)
-    {
-        return value?.Split(new[] { ',' }, StringSplitOptions.None)
-                   .Select(part => part.Trim())
-                   .ToArray() ??
-               Array.Empty<string>();
-    }
-
     private static List<PrefabRuleEntry> DeserializeEntries(string yaml, string source)
     {
         if (string.IsNullOrWhiteSpace(yaml))
@@ -910,7 +877,7 @@ internal static class PrefabRuleStore
 
     private static string SerializeFull(IReadOnlyDictionary<string, PrefabRule> rules)
     {
-        return FullSerializer.Serialize(ToFullEntries(rules, includeComponents: true));
+        return FullSerializer.Serialize(ToFullEntries(rules));
     }
 
     private static string SerializePolicy(IReadOnlyDictionary<string, PrefabRule> rules, IReadOnlyCollection<PrefabDiscovery> discoveries)
@@ -982,20 +949,35 @@ internal static class PrefabRuleStore
         public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)
         {
             PrefabRequirement requirement = (PrefabRequirement)value!;
+            string item = requirement?.Item?.Trim() ?? "";
+            if (item.Length == 0 || requirement!.Amount < 1)
+            {
+                throw new YamlException("Prefab requirements must have a non-empty item and a positive integer amount.");
+            }
+
             emitter.Emit(new MappingStart());
-            emitter.Emit(new Scalar(requirement.Item ?? ""));
-            emitter.Emit(new Scalar(Math.Max(1, requirement.Amount).ToString(CultureInfo.InvariantCulture)));
+            emitter.Emit(new Scalar(item));
+            emitter.Emit(new Scalar(requirement.Amount.ToString(CultureInfo.InvariantCulture)));
             emitter.Emit(new MappingEnd());
         }
 
         private static PrefabRequirement ParseRequirement(string item, string value)
         {
-            int amount = 1;
-            int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out amount);
+            string itemName = item.Trim();
+            if (itemName.Length == 0)
+            {
+                throw new YamlException("Prefab requirement item names cannot be empty.");
+            }
+
+            if (!int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int amount) || amount < 1)
+            {
+                throw new YamlException($"Prefab requirement '{itemName}' must have a positive integer amount.");
+            }
+
             return new PrefabRequirement
             {
-                Item = item.Trim(),
-                Amount = Math.Max(1, amount)
+                Item = itemName,
+                Amount = amount
             };
         }
     }
@@ -1009,24 +991,27 @@ internal static class PrefabRuleStore
 
         public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
         {
-            if (parser.TryConsume<SequenceStart>(out _))
+            if (!parser.TryConsume<SequenceStart>(out _))
             {
-                ComponentList components = new();
-                while (!parser.Accept<SequenceEnd>(out _))
-                {
-                    Scalar scalar = parser.Consume<Scalar>();
-                    if (!string.IsNullOrWhiteSpace(scalar.Value))
-                    {
-                        components.Add(scalar.Value.Trim());
-                    }
-                }
-
-                parser.Consume<SequenceEnd>();
-                return components;
+                Scalar scalar = parser.Consume<Scalar>();
+                throw new YamlException(
+                    scalar.Start,
+                    scalar.End,
+                    "Prefab components must use a YAML sequence, for example 'components: [Piece, WearNTear]'.");
             }
 
-            Scalar value = parser.Consume<Scalar>();
-            return new ComponentList(SplitTuple(value.Value).Where(part => !string.IsNullOrWhiteSpace(part)));
+            ComponentList components = new();
+            while (!parser.Accept<SequenceEnd>(out _))
+            {
+                Scalar scalar = parser.Consume<Scalar>();
+                if (!string.IsNullOrWhiteSpace(scalar.Value))
+                {
+                    components.Add(scalar.Value.Trim());
+                }
+            }
+
+            parser.Consume<SequenceEnd>();
+            return components;
         }
 
         public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)

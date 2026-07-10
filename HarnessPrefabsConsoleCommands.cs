@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace HarnessPrefabs;
 
 internal static class HarnessPrefabsConsoleCommands
@@ -18,13 +16,7 @@ internal static class HarnessPrefabsConsoleCommands
         new Terminal.ConsoleCommand(
             WriteFullCommandName,
             "Write HarnessPrefabs full scaffold YAML with explicit active defaults. Usage: harnessprefabs:full",
-            WriteFullScaffoldFile,
-            optionsFetcher: GetTabOptions);
-    }
-
-    private static List<string> GetTabOptions()
-    {
-        return new List<string>();
+            WriteFullScaffoldFile);
     }
 
     private static void WriteFullScaffoldFile(Terminal.ConsoleEventArgs args)

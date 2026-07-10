@@ -56,16 +56,5 @@ internal sealed class PrefabDiscovery
     public bool ClipGround { get; set; }
     public bool AllowedInDungeons { get; set; }
     public ComponentList Components { get; set; } = new();
-    public GameObjectRef Prefab { get; set; } = GameObjectRef.Empty;
-}
-
-internal readonly struct GameObjectRef
-{
-    public static readonly GameObjectRef Empty = new(null);
-    public readonly UnityEngine.GameObject? Value;
-
-    public GameObjectRef(UnityEngine.GameObject? value)
-    {
-        Value = value;
-    }
+    public UnityEngine.GameObject? Prefab { get; set; }
 }

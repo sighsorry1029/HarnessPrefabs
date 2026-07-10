@@ -15,9 +15,8 @@ namespace HarnessPrefabs;
 
 internal static class PrefabBuildManager
 {
-    private static readonly HashSet<string> AddedPrefabNames = new(StringComparer.Ordinal);
-    private static readonly HashSet<string> AddedPieceNames = new(StringComparer.Ordinal);
-    private static readonly List<GameObject> AddedPrefabs = new();
+    private static readonly HashSet<GameObject> AddedPrefabs = new();
+    private static readonly HashSet<string> AddedAdminPieceNames = new(StringComparer.Ordinal);
     private static bool _initialized;
     private static bool _jotunnPiecesRegistered;
     private static bool _refreshing;
@@ -50,7 +49,7 @@ internal static class PrefabBuildManager
         }
 
         _lastHarnessHammerTabsEnabled = harnessEnabled;
-        Refresh("harness hammer visibility changed");
+        RefreshFromCachedRules("harness hammer visibility changed");
     }
 
     public static void Refresh(string reason)
@@ -208,7 +207,7 @@ internal static class PrefabBuildManager
             return;
         }
 
-        foreach (string pieceName in AddedPieceNames)
+        foreach (string pieceName in AddedAdminPieceNames)
         {
             knownRecipes.Add(pieceName);
         }
@@ -252,9 +251,9 @@ internal static class PrefabBuildManager
                 discovery.Name,
                 MvbpPrefabDefaults.NeedsPlacementPatch(discovery.Name),
                 MvbpCompatibilityDefaults.GetPlacementOffset(discovery.Name));
-            if (discovery.Prefab.Value && TryAddPrefabToHammer(discovery.Prefab.Value, rule, hammer))
+            if (discovery.Prefab && TryAddPrefabToHammer(discovery.Prefab, rule, hammer))
             {
-                AddedPrefabNames.Add(discovery.Name);
+                AddedPrefabs.Add(discovery.Prefab);
             }
         }
 
@@ -282,7 +281,13 @@ internal static class PrefabBuildManager
             return false;
         }
 
-        Piece piece = EnsurePiece(prefab, rule, hammer);
+        if (!TryResolveRequirements(prefab.name, rule.Requirements, out Requirement[] resources) ||
+            !TryResolveCraftingStation(prefab.name, rule.CraftingStation, out CraftingStation craftingStation))
+        {
+            return false;
+        }
+
+        Piece piece = EnsurePiece(prefab, rule, hammer, resources, craftingStation);
         if (!piece)
         {
             return false;
@@ -303,12 +308,20 @@ internal static class PrefabBuildManager
             return false;
         }
 
-        AddedPrefabs.Add(prefab);
-        AddedPieceNames.Add(piece.m_name);
+        if (rule.Access == PrefabAccess.Admin)
+        {
+            AddedAdminPieceNames.Add(piece.m_name);
+        }
+
         return true;
     }
 
-    private static Piece EnsurePiece(GameObject prefab, PrefabRule rule, PieceTable hammer)
+    private static Piece EnsurePiece(
+        GameObject prefab,
+        PrefabRule rule,
+        PieceTable hammer,
+        Requirement[] resources,
+        CraftingStation craftingStation)
     {
         Piece piece = prefab.GetComponent<Piece>();
         if (!piece)
@@ -319,7 +332,7 @@ internal static class PrefabBuildManager
         piece.m_enabled = true;
         piece.m_name = string.IsNullOrWhiteSpace(rule.DisplayName) ? prefab.name : rule.DisplayName;
         piece.m_description = string.IsNullOrWhiteSpace(rule.Description) ? "" : rule.Description;
-        piece.m_category = ResolvePieceCategory(rule.Category, hammer);
+        piece.m_category = PrefabCategoryRegistry.GetOrAdd(hammer, rule.Category);
         piece.m_groundOnly = false;
         piece.m_groundPiece = false;
         piece.m_cultivatedGroundOnly = false;
@@ -336,9 +349,9 @@ internal static class PrefabBuildManager
         piece.m_clipGround = rule.ClipGround;
         piece.m_repairPiece = false;
         piece.m_canBeRemoved = rule.CanBeRemoved;
-        piece.m_craftingStation = ResolveCraftingStation(rule.CraftingStation);
+        piece.m_craftingStation = craftingStation;
         HarnessPrefabsPlacedPiecePatches.RegisterDefaultResources(prefab, piece.m_resources);
-        piece.m_resources = ParseRequirements(rule.Requirements);
+        piece.m_resources = resources;
         ApplyPrefabContainerDefaults(prefab);
         PrefabMvbpFixups.Apply(prefab);
         HarnessPrefabsSfxManager.FixPlacementSfx(piece);
@@ -389,33 +402,15 @@ internal static class PrefabBuildManager
         piece.m_allowRotatedOverlap = vikingShipPiece ? vikingShipPiece.m_allowRotatedOverlap : false;
     }
 
-    private static Piece.PieceCategory ResolvePieceCategory(string categoryName, PieceTable hammer)
-    {
-        categoryName = BuildCategories.NormalizeCategory(categoryName);
-        switch (categoryName)
-        {
-            case BuildCategories.Misc:
-                return Piece.PieceCategory.Misc;
-            case BuildCategories.Crafting:
-                return Piece.PieceCategory.Crafting;
-            case BuildCategories.Building:
-            case "BuildingWorkbench":
-                return Piece.PieceCategory.BuildingWorkbench;
-            case BuildCategories.Stonecutter:
-            case "Stonecutter":
-                return Piece.PieceCategory.BuildingStonecutter;
-            case BuildCategories.Furniture:
-                return Piece.PieceCategory.Furniture;
-        }
-
-        return PrefabCategoryRegistry.GetOrAdd(hammer, categoryName);
-    }
-
-    private static Requirement[] ParseRequirements(IEnumerable<PrefabRequirement> requirements)
+    private static bool TryResolveRequirements(
+        string prefabName,
+        IEnumerable<PrefabRequirement> requirements,
+        out Requirement[] resolvedRequirements)
     {
         if (requirements == null)
         {
-            return Array.Empty<Requirement>();
+            resolvedRequirements = Array.Empty<Requirement>();
+            return true;
         }
 
         List<Requirement> parsed = new();
@@ -423,16 +418,26 @@ internal static class PrefabBuildManager
         {
             if (requirement == null || string.IsNullOrWhiteSpace(requirement.Item))
             {
-                continue;
+                resolvedRequirements = Array.Empty<Requirement>();
+                HarnessPrefabsPlugin.Log.LogError($"Prefab '{prefabName}' has an empty build requirement and will not be registered.");
+                return false;
             }
 
             string itemName = requirement.Item.Trim();
-            int amount = Math.Max(1, requirement.Amount);
+            int amount = requirement.Amount;
+            if (amount < 1)
+            {
+                resolvedRequirements = Array.Empty<Requirement>();
+                HarnessPrefabsPlugin.Log.LogError($"Prefab '{prefabName}' has an invalid amount for requirement '{itemName}' and will not be registered.");
+                return false;
+            }
+
             ItemDrop item = ResolveItemDrop(itemName);
             if (!item)
             {
-                HarnessPrefabsPlugin.Log.LogWarning($"Could not resolve requirement item '{itemName}'.");
-                continue;
+                resolvedRequirements = Array.Empty<Requirement>();
+                HarnessPrefabsPlugin.Log.LogError($"Prefab '{prefabName}' requirement item '{itemName}' could not be resolved. The prefab will not be registered.");
+                return false;
             }
 
             parsed.Add(new Requirement
@@ -444,7 +449,8 @@ internal static class PrefabBuildManager
             });
         }
 
-        return parsed.ToArray();
+        resolvedRequirements = parsed.ToArray();
+        return true;
     }
 
     private static ItemDrop ResolveItemDrop(string itemName)
@@ -453,21 +459,45 @@ internal static class PrefabBuildManager
         return itemPrefab ? itemPrefab.GetComponent<ItemDrop>() : null;
     }
 
-    private static CraftingStation ResolveCraftingStation(string stationName)
+    private static bool TryResolveCraftingStation(
+        string prefabName,
+        string stationName,
+        out CraftingStation craftingStation)
     {
+        craftingStation = null;
         if (string.IsNullOrWhiteSpace(stationName) || stationName.Equals("None", StringComparison.OrdinalIgnoreCase))
         {
-            return null;
+            return true;
         }
 
-        string internalName = CraftingStations.GetInternalName(stationName);
-        GameObject station = ZNetScene.instance ? ZNetScene.instance.GetPrefab(internalName) : null;
+        string normalizedName = stationName.Trim();
+        string internalName;
+        try
+        {
+            internalName = CraftingStations.GetInternalName(normalizedName);
+        }
+        catch (Exception ex)
+        {
+            HarnessPrefabsPlugin.Log.LogError($"Prefab '{prefabName}' crafting station '{normalizedName}' is invalid and the prefab will not be registered: {ex.Message}");
+            return false;
+        }
+
+        GameObject station = ZNetScene.instance
+            ? ZNetScene.instance.GetPrefab(internalName) ?? ZNetScene.instance.GetPrefab(normalizedName)
+            : null;
         if (!station && ObjectDB.instance)
         {
-            station = ObjectDB.instance.GetItemPrefab(internalName) ?? ObjectDB.instance.GetItemPrefab(stationName);
+            station = ObjectDB.instance.GetItemPrefab(internalName) ?? ObjectDB.instance.GetItemPrefab(normalizedName);
         }
 
-        return station ? station.GetComponent<CraftingStation>() : null;
+        craftingStation = station ? station.GetComponent<CraftingStation>() : null;
+        if (craftingStation)
+        {
+            return true;
+        }
+
+        HarnessPrefabsPlugin.Log.LogError($"Prefab '{prefabName}' crafting station '{normalizedName}' could not be resolved. The prefab will not be registered.");
+        return false;
     }
 
     private static Sprite ResolveDefaultIcon()
@@ -499,28 +529,26 @@ internal static class PrefabBuildManager
         if (!hammer || hammer.m_pieces == null || AddedPrefabs.Count == 0)
         {
             AddedPrefabs.Clear();
-            AddedPrefabNames.Clear();
-            AddedPieceNames.Clear();
+            AddedAdminPieceNames.Clear();
             return;
         }
 
         for (int i = hammer.m_pieces.Count - 1; i >= 0; i--)
         {
             GameObject piece = hammer.m_pieces[i];
-            if (piece && AddedPrefabNames.Contains(piece.name))
+            if (piece && AddedPrefabs.Contains(piece))
             {
                 hammer.m_pieces.RemoveAt(i);
             }
         }
 
         AddedPrefabs.Clear();
-        AddedPrefabNames.Clear();
-        AddedPieceNames.Clear();
+        AddedAdminPieceNames.Clear();
     }
 
     private static void RemoveAddedPiecesFromTable(PieceTable table)
     {
-        if (!table || table.m_pieces == null || AddedPrefabNames.Count == 0)
+        if (!table || table.m_pieces == null || AddedPrefabs.Count == 0)
         {
             return;
         }
@@ -528,7 +556,7 @@ internal static class PrefabBuildManager
         for (int i = table.m_pieces.Count - 1; i >= 0; i--)
         {
             GameObject piece = table.m_pieces[i];
-            if (piece && AddedPrefabNames.Contains(piece.name))
+            if (piece && AddedPrefabs.Contains(piece))
             {
                 table.m_pieces.RemoveAt(i);
             }
@@ -571,7 +599,7 @@ internal static class PrefabBuildManager
 
             foreach (GameObject piece in table.m_pieces)
             {
-                if (piece && !string.IsNullOrWhiteSpace(piece.name) && !AddedPrefabNames.Contains(piece.name))
+                if (piece && !string.IsNullOrWhiteSpace(piece.name) && !AddedPrefabs.Contains(piece))
                 {
                     names.Add(piece.name);
                 }
@@ -673,10 +701,7 @@ internal static class PrefabBuildManager
     {
         StringBuilder builder = new();
         builder.Append("source=").Append(HarnessPrefabsPlugin.IsSourceOfTruth).Append(';');
-        builder.Append("tabs=").Append(HarnessPrefabsPlugin.HarnessHammerTabsEnabled).Append(';');
-        builder.Append("unsafeBeds=").Append(HarnessPrefabsPlugin.UnsafeBedPatchesEnabled).Append(';');
-        builder.Append("fermenter=").Append(HarnessPrefabsPlugin.FermenterPatchDurationPercent).Append(';');
-        builder.Append("shipSpeed=").Append(HarnessPrefabsPlugin.TrailershipSpeedRatio.ToString("0.###")).AppendLine();
+        builder.AppendLine();
 
         AppendPrefabNames(builder, "znet", ZNetScene.instance.m_prefabs);
         AppendPrefabNames(builder, "nonnv", ZNetScene.instance.m_nonNetViewPrefabs);
@@ -706,7 +731,7 @@ internal static class PrefabBuildManager
         {
             builder.Append(ReferenceEquals(table, hammer) ? "Hammer" : table.name).Append('=');
             foreach (string name in table.m_pieces
-                         .Where(piece => piece && !string.IsNullOrWhiteSpace(piece.name) && !AddedPrefabNames.Contains(piece.name))
+                         .Where(piece => piece && !string.IsNullOrWhiteSpace(piece.name) && !AddedPrefabs.Contains(piece))
                          .Select(piece => piece.name)
                          .OrderBy(name => name, StringComparer.Ordinal))
             {
