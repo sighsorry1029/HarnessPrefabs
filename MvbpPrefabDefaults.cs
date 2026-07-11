@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace HarnessPrefabs;
@@ -48,6 +50,14 @@ internal readonly struct MvbpPrefabDefault
 
 internal static partial class MvbpPrefabDefaults
 {
+    private static readonly TextInfo EnglishTextInfo = new CultureInfo("en-US", useUserOverride: false).TextInfo;
+    private static readonly Regex DigitsToEndRegex = new("(.+?)((?<!x)\\d+(?![xm\\u00B0]))(.*)");
+    private static readonly Regex SplitCapitalsRegex = new("([a-z])([A-Z])");
+    private static readonly Regex CreepToEndRegex = new("(.+?)(creep)(.*)");
+    private static readonly Regex WhiteSpaceRegex = new(" +");
+    private static readonly Regex UnitSpaceRegex = new("(\\d+)(m)");
+    private static readonly Regex IsLastCharDigitRegex = new("((?<!x)\\d+$)");
+
     public static IEnumerable<string> Names => Defaults.Keys;
 
     public static bool HasDefault(string prefabName)
@@ -113,7 +123,90 @@ internal static partial class MvbpPrefabDefaults
 
     private static string ResolvePublicDisplayName(PrefabDiscovery discovery, MvbpPrefabDefault seed)
     {
-        return seed.DisplayName ?? discovery.Name;
+        return seed.DisplayName ?? FormatMvbpPieceName(discovery.Name);
+    }
+
+    private static string FormatMvbpPieceName(string prefabName)
+    {
+        string formatted = RemoveSuffix(prefabName, "_frac");
+        formatted = RemoveSuffix(formatted, "_destruction");
+        formatted = CreepToEndRegex.Replace(formatted, "$1$3 ($2)");
+        formatted = DigitsToEndRegex.Replace(formatted, "$1$3 $2");
+        formatted = UnitSpaceRegex.Replace(formatted, "$1 $2");
+        formatted = SplitCapitalsRegex.Replace(formatted, "$1 $2");
+        formatted = formatted.Replace('_', ' ').ToLowerInvariant()
+            .Replace("dverger", "dvergr")
+            .Replace("dvergrtown", "dvergr")
+            .Replace("dvergrprops", "dvergr")
+            .Replace("destructable", "destructible")
+            .Replace("rockdolmen", "rock dolmen")
+            .Replace("blackmarble", "black marble")
+            .Replace("sunkencrypt", "sunken crypt")
+            .Replace("irongate", "iron gate")
+            .Replace("goblin", "fuling")
+            .Replace("hugeroot", "ancient root")
+            .Replace("stubbe", "stump")
+            .Replace("stub", "stump")
+            .Replace("swamptree", "Ancient tree")
+            .Replace("swamp tree", "Ancient tree")
+            .Replace("ygga", "yggdrasil ")
+            .Replace("guardstone", "ward")
+            .Replace("woodwall", "wood wall")
+            .Trim();
+
+        formatted = RemovePrefix(formatted, "piece").TrimStart();
+        formatted = RemovePrefix(formatted, "dungeon").TrimStart();
+        if (formatted.EndsWith("destructible", StringComparison.Ordinal))
+        {
+            formatted = RemoveSuffix(formatted, "destructible") + " (destructible)";
+        }
+
+        if (formatted.StartsWith("pickable", StringComparison.Ordinal))
+        {
+            formatted = RemovePrefix(formatted, "pickable").TrimStart() + " (pickable)";
+        }
+
+        if (StartsWithAny(formatted, "mountainkit", "mountain kit"))
+        {
+            formatted = RemovePrefix(formatted, "mountainkit");
+            formatted = RemovePrefix(formatted, "mountain kit").TrimStart() + " (cave)";
+        }
+
+        if (StartsWithAny(formatted, "sunkencrypt", "sunken crypt"))
+        {
+            formatted = RemovePrefix(formatted, "sunkencrypt");
+            formatted = RemovePrefix(formatted, "sunken crypt").TrimStart() + " (crypt)";
+        }
+
+        if (StartsWithAny(formatted, "forestcrypt", "forest crypt"))
+        {
+            formatted = RemovePrefix(formatted, "forestcrypt");
+            formatted = RemovePrefix(formatted, "forest crypt").TrimStart() + " (tomb)";
+        }
+
+        if (formatted.EndsWith("26", StringComparison.Ordinal) || formatted.EndsWith("45", StringComparison.Ordinal))
+        {
+            formatted += "\u00B0";
+        }
+
+        formatted = IsLastCharDigitRegex.Replace(formatted, " ($1)");
+        formatted = WhiteSpaceRegex.Replace(formatted, " ");
+        return EnglishTextInfo.ToTitleCase(formatted);
+    }
+
+    private static string RemovePrefix(string value, string prefix)
+    {
+        return value.StartsWith(prefix, StringComparison.Ordinal) ? value.Substring(prefix.Length) : value;
+    }
+
+    private static string RemoveSuffix(string value, string suffix)
+    {
+        return value.EndsWith(suffix, StringComparison.Ordinal) ? value.Substring(0, value.Length - suffix.Length) : value;
+    }
+
+    private static bool StartsWithAny(string value, string first, string second)
+    {
+        return value.StartsWith(first, StringComparison.Ordinal) || value.StartsWith(second, StringComparison.Ordinal);
     }
 
     private static string ResolvePublicDescription(PrefabDiscovery discovery, MvbpPrefabDefault seed)
