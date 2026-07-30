@@ -9,7 +9,7 @@ namespace HarnessPrefabs;
 
 internal static class PrefabCategoryRegistry
 {
-    private const int FirstCustomCategory = 9;
+    private const int FirstCustomCategory = (int)PieceCategory.Max + 1;
 
     private static readonly Dictionary<string, PieceCategory> CategoriesByName = new(StringComparer.Ordinal);
 
@@ -125,24 +125,22 @@ internal static class PrefabCategoryRegistry
         switch (name)
         {
             case BuildCategories.Misc:
-                category = (PieceCategory)0;
+                category = PieceCategory.Misc;
                 return true;
             case BuildCategories.Crafting:
-                category = (PieceCategory)1;
+                category = PieceCategory.Crafting;
                 return true;
             case BuildCategories.Building:
-            case "BuildingWorkbench":
-                category = (PieceCategory)2;
+                category = PieceCategory.BuildingWorkbench;
                 return true;
             case BuildCategories.Stonecutter:
-            case "Stonecutter":
-                category = (PieceCategory)3;
+                category = PieceCategory.BuildingStonecutter;
                 return true;
             case BuildCategories.Furniture:
-                category = (PieceCategory)4;
+                category = PieceCategory.Furniture;
                 return true;
             default:
-                category = (PieceCategory)0;
+                category = PieceCategory.Misc;
                 return false;
         }
     }
@@ -204,9 +202,7 @@ internal static class PrefabCategoryRegistry
         category = (PieceCategory)0;
         try
         {
-#pragma warning disable CS0618
-            category = PieceManager.Instance.AddPieceCategory(PieceTables.Hammer, categoryName);
-#pragma warning restore CS0618
+            category = PieceManager.Instance.AddPieceCategory(categoryName);
             return category != PieceCategory.Max && category != PieceCategory.All;
         }
         catch (Exception ex)
@@ -295,8 +291,6 @@ internal static class PrefabCategoryRegistry
             table.m_categories.Add(category);
             table.m_categoryLabels.Add(label);
         }
-
-        EnsureGrown(table);
     }
 
     private static void GrowVectorArray(ref Vector2Int[] array, int needed)

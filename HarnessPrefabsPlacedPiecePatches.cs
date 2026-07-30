@@ -93,33 +93,42 @@ internal static class HarnessPrefabsPlacedPiecePatches
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Destroy))]
-    private static void WearNTearDestroyPrefix(WearNTear __instance, out EffectList __state)
+    private static void WearNTearDestroyPrefix(
+        WearNTear __instance,
+        out (bool Changed, EffectList Original) __state)
     {
-        __state = null;
+        __state = (false, null);
         if (!HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _) || HarnessPrefabsSfxManager.HasSfx(__instance.m_destroyedEffect))
         {
             return;
         }
 
-        __state = __instance.m_destroyedEffect;
+        __state = (true, __instance.m_destroyedEffect);
         __instance.m_destroyedEffect = HarnessPrefabsSfxManager.FixRemovalSfx(__instance);
     }
 
-    [HarmonyPostfix]
+    [HarmonyFinalizer]
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Destroy))]
-    private static void WearNTearDestroyPostfix(WearNTear __instance, EffectList __state)
+    private static Exception WearNTearDestroyFinalizer(
+        WearNTear __instance,
+        (bool Changed, EffectList Original) __state,
+        Exception __exception)
     {
-        if (__state != null)
+        if (__state.Changed && __instance)
         {
-            __instance.m_destroyedEffect = __state;
+            __instance.m_destroyedEffect = __state.Original;
         }
+
+        return __exception;
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(Piece), nameof(Piece.DropResources))]
-    private static void PieceDropResourcesPrefix(Piece __instance, out Piece.Requirement[] __state)
+    private static void PieceDropResourcesPrefix(
+        Piece __instance,
+        out (bool Changed, Piece.Requirement[] Original) __state)
     {
-        __state = null;
+        __state = (false, null);
         if (!__instance || !HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _))
         {
             return;
@@ -128,25 +137,44 @@ internal static class HarnessPrefabsPlacedPiecePatches
         Piece.Requirement[] dropResources = GetDropResources(__instance);
         if (dropResources != null && !ReferenceEquals(dropResources, __instance.m_resources))
         {
-            __state = __instance.m_resources;
+            __state = (true, __instance.m_resources);
             __instance.m_resources = dropResources;
         }
     }
 
-    [HarmonyPostfix]
+    [HarmonyFinalizer]
     [HarmonyPatch(typeof(Piece), nameof(Piece.DropResources))]
-    private static void PieceDropResourcesPostfix(Piece __instance, Piece.Requirement[] __state)
+    private static Exception PieceDropResourcesFinalizer(
+        Piece __instance,
+        (bool Changed, Piece.Requirement[] Original) __state,
+        Exception __exception)
     {
-        if (__state != null && __instance)
+        if (__state.Changed && __instance)
         {
-            __instance.m_resources = __state;
+            __instance.m_resources = __state.Original;
         }
+
+        return __exception;
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(DropOnDestroyed), "OnDestroyed")]
+    private static bool DropOnDestroyedPrefix(DropOnDestroyed __instance)
+    {
+        return !HarnessPrefabsRuntime.TryGetKnownManagedPlacedPiece(__instance, out _);
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(Door), "RPC_UseDoor")]
     private static void DoorUsePrefix(Door __instance, out int? __state)
     {
+        __state = null;
+        if (!HarnessPrefabsRuntime.TryGetKnownManagedPlacedPiece(__instance, out Piece piece) ||
+            HarnessPrefabsRuntime.NormalizePrefabName(piece.gameObject.name) != "dvergrtown_secretdoor")
+        {
+            return;
+        }
+
         __state = GetDoorState(__instance);
     }
 
@@ -154,14 +182,14 @@ internal static class HarnessPrefabsPlacedPiecePatches
     [HarmonyPatch(typeof(Door), "RPC_UseDoor")]
     private static void DoorUsePostfix(Door __instance, int? __state)
     {
-        if (!__instance || HarnessPrefabsRuntime.NormalizePrefabName(__instance.gameObject.name) != "dvergrtown_secretdoor")
+        if (!__instance || !__state.HasValue)
         {
             return;
         }
 
         int? doorState = GetDoorState(__instance);
         ZNetView zNetView = __instance.GetComponent<ZNetView>();
-        if (!doorState.HasValue || !__state.HasValue || (__state != -1 && __state != 1) || doorState != 0 || !zNetView || !zNetView.IsValid())
+        if (!doorState.HasValue || (__state != -1 && __state != 1) || doorState != 0 || !zNetView || !zNetView.IsValid())
         {
             return;
         }
@@ -369,66 +397,116 @@ internal static class HarnessPrefabsPlacedPiecePatches
         }
 
         Fermenter existingFermenter = gameObject.GetComponent<Fermenter>();
+        GameObject fermenterPrefab = ZNetScene.instance ? ZNetScene.instance.GetPrefab("fermenter") : null;
+        Fermenter sourceFermenter = fermenterPrefab ? fermenterPrefab.GetComponent<Fermenter>() : null;
         if (existingFermenter)
         {
+            if (sourceFermenter)
+            {
+                existingFermenter.m_fermentationDuration =
+                    sourceFermenter.m_fermentationDuration * Mathf.Clamp(durationPercent, 1, 100) / 100f;
+            }
+
             EnsureFermenterHoverProxies(gameObject);
-            ApplyFermenterLodPatch(gameObject);
+            ApplyFermenterLodPatch(gameObject, fermenterPrefab);
+            ApplyPlayerBasePatch(gameObject);
             return;
         }
 
-        GameObject fermenterPrefab = ZNetScene.instance ? ZNetScene.instance.GetPrefab("fermenter") : null;
-        Fermenter sourceFermenter = fermenterPrefab ? fermenterPrefab.GetComponent<Fermenter>() : null;
         if (!fermenterPrefab || !sourceFermenter)
         {
             return;
         }
 
-        GameObject addButton = CloneFermenterChild(fermenterPrefab, "add_button", gameObject.transform);
-        GameObject tapButton = CloneFermenterChild(fermenterPrefab, "tap_button", gameObject.transform);
-        GameObject roofCheckPoint = CloneFermenterChild(fermenterPrefab, "roofcheckpoint", gameObject.transform);
-        GameObject output = CloneFermenterChild(fermenterPrefab, "output", gameObject.transform);
-        GameObject ready = CloneFermenterChild(fermenterPrefab, "_ready", gameObject.transform);
-        GameObject fermenting = CloneFermenterChild(fermenterPrefab, "_fermenting", gameObject.transform);
-        if (!addButton || !tapButton || !roofCheckPoint || !output || !ready || !fermenting)
+        Transform addButtonSource = fermenterPrefab.transform.Find("add_button");
+        Transform tapButtonSource = fermenterPrefab.transform.Find("tap_button");
+        Transform roofCheckPointSource = fermenterPrefab.transform.Find("roofcheckpoint");
+        Transform outputSource = fermenterPrefab.transform.Find("output");
+        Transform readySource = fermenterPrefab.transform.Find("_ready");
+        Transform fermentingSource = fermenterPrefab.transform.Find("_fermenting");
+        if (!addButtonSource ||
+            !tapButtonSource ||
+            !roofCheckPointSource ||
+            !outputSource ||
+            !readySource ||
+            !fermentingSource ||
+            !addButtonSource.GetComponent<Switch>() ||
+            !tapButtonSource.GetComponent<Switch>())
         {
             return;
         }
 
-        addButton.transform.localScale = Vector3.one;
-        addButton.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-        tapButton.transform.localPosition = new Vector3(0f, 0.5f, 0.9f);
-        output.transform.localPosition = new Vector3(0f, 0.5f, 1.2f);
-        roofCheckPoint.transform.localPosition = new Vector3(0f, 1.5f, 0f);
-        ready.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-        fermenting.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-
-        Transform top = gameObject.transform.Find("_top");
-        if (!top)
-        {
-            GameObject topObject = new("_top");
-            topObject.transform.SetParent(gameObject.transform, worldPositionStays: false);
-            top = topObject.transform;
-        }
-
+        List<GameObject> addedObjects = new();
+        Fermenter fermenter = null;
         bool activeSelf = gameObject.activeSelf;
-        gameObject.SetActive(false);
-        Fermenter fermenter = gameObject.AddComponent<Fermenter>();
-        fermenter.m_addSwitch = addButton.GetComponent<Switch>();
-        fermenter.m_tapSwitch = tapButton.GetComponent<Switch>();
-        fermenter.m_roofCheckPoint = roofCheckPoint.transform;
-        fermenter.m_topObject = top.gameObject;
-        fermenter.m_readyObject = ready;
-        fermenter.m_fermentingObject = fermenting;
-        fermenter.m_outputPoint = output.transform;
-        fermenter.m_tapDelay = sourceFermenter.m_tapDelay;
-        fermenter.m_updateCoverTimer = sourceFermenter.m_updateCoverTimer;
-        fermenter.m_fermentationDuration = sourceFermenter.m_fermentationDuration * Mathf.Clamp(durationPercent, 1, 100) / 100f;
-        fermenter.m_name = sourceFermenter.m_name;
-        fermenter.m_addedEffects = sourceFermenter.m_addedEffects;
-        fermenter.m_tapEffects = sourceFermenter.m_tapEffects;
-        fermenter.m_spawnEffects = sourceFermenter.m_spawnEffects;
-        fermenter.m_conversion = sourceFermenter.m_conversion;
-        gameObject.SetActive(activeSelf);
+        try
+        {
+            GameObject addButton = CloneFermenterChild(addButtonSource, gameObject.transform);
+            GameObject tapButton = CloneFermenterChild(tapButtonSource, gameObject.transform);
+            GameObject roofCheckPoint = CloneFermenterChild(roofCheckPointSource, gameObject.transform);
+            GameObject output = CloneFermenterChild(outputSource, gameObject.transform);
+            GameObject ready = CloneFermenterChild(readySource, gameObject.transform);
+            GameObject fermenting = CloneFermenterChild(fermentingSource, gameObject.transform);
+            addedObjects.AddRange(new[] { addButton, tapButton, roofCheckPoint, output, ready, fermenting });
+
+            addButton.transform.localScale = Vector3.one;
+            addButton.transform.localPosition = new Vector3(0f, 0.75f, 0f);
+            tapButton.transform.localPosition = new Vector3(0f, 0.5f, 0.9f);
+            output.transform.localPosition = new Vector3(0f, 0.5f, 1.2f);
+            roofCheckPoint.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+            ready.transform.localPosition = new Vector3(0f, 0.75f, 0f);
+            fermenting.transform.localPosition = new Vector3(0f, 0.75f, 0f);
+
+            Transform top = gameObject.transform.Find("_top");
+            if (!top)
+            {
+                GameObject topObject = new("_top");
+                topObject.transform.SetParent(gameObject.transform, worldPositionStays: false);
+                addedObjects.Add(topObject);
+                top = topObject.transform;
+            }
+
+            gameObject.SetActive(false);
+            fermenter = gameObject.AddComponent<Fermenter>();
+            fermenter.m_addSwitch = addButton.GetComponent<Switch>();
+            fermenter.m_tapSwitch = tapButton.GetComponent<Switch>();
+            fermenter.m_roofCheckPoint = roofCheckPoint.transform;
+            fermenter.m_topObject = top.gameObject;
+            fermenter.m_readyObject = ready;
+            fermenter.m_fermentingObject = fermenting;
+            fermenter.m_outputPoint = output.transform;
+            fermenter.m_tapDelay = sourceFermenter.m_tapDelay;
+            fermenter.m_updateCoverTimer = sourceFermenter.m_updateCoverTimer;
+            fermenter.m_fermentationDuration =
+                sourceFermenter.m_fermentationDuration * Mathf.Clamp(durationPercent, 1, 100) / 100f;
+            fermenter.m_name = sourceFermenter.m_name;
+            fermenter.m_addedEffects = sourceFermenter.m_addedEffects;
+            fermenter.m_tapEffects = sourceFermenter.m_tapEffects;
+            fermenter.m_spawnEffects = sourceFermenter.m_spawnEffects;
+            fermenter.m_conversion = sourceFermenter.m_conversion;
+        }
+        catch (Exception ex)
+        {
+            if (fermenter)
+            {
+                UnityEngine.Object.DestroyImmediate(fermenter);
+            }
+
+            for (int i = addedObjects.Count - 1; i >= 0; i--)
+            {
+                if (addedObjects[i])
+                {
+                    UnityEngine.Object.DestroyImmediate(addedObjects[i]);
+                }
+            }
+
+            HarnessPrefabsPlugin.Log.LogWarning($"Failed to patch fermenter prefab '{prefabName}': {ex.Message}");
+            return;
+        }
+        finally
+        {
+            gameObject.SetActive(activeSelf);
+        }
 
         EnsureFermenterHoverProxies(gameObject);
         ApplyFermenterLodPatch(gameObject, fermenterPrefab);
@@ -477,18 +555,20 @@ internal static class HarnessPrefabsPlacedPiecePatches
         }
     }
 
-    private static GameObject CloneFermenterChild(GameObject fermenterPrefab, string childName, Transform targetParent)
+    private static GameObject CloneFermenterChild(Transform source, Transform targetParent)
     {
-        Transform source = fermenterPrefab.transform.Find(childName);
-        if (!source)
+        bool activeSelf = source.gameObject.activeSelf;
+        GameObject clone;
+        try
         {
-            return null;
+            source.gameObject.SetActive(false);
+            clone = UnityEngine.Object.Instantiate(source.gameObject);
+        }
+        finally
+        {
+            source.gameObject.SetActive(activeSelf);
         }
 
-        bool activeSelf = source.gameObject.activeSelf;
-        source.gameObject.SetActive(false);
-        GameObject clone = UnityEngine.Object.Instantiate(source.gameObject);
-        source.gameObject.SetActive(activeSelf);
         clone.name = source.name;
         clone.transform.SetParent(targetParent, worldPositionStays: false);
         clone.SetActive(activeSelf);
@@ -508,13 +588,16 @@ internal static class HarnessPrefabsPlacedPiecePatches
         Pickable pickable = piece.GetComponent<Pickable>();
         if (pickable)
         {
-            ZNetView zNetView = piece.GetComponent<ZNetView>();
-            if (zNetView && zNetView.IsValid())
+            bool wasPicked = pickable.m_picked;
+            bool pickRequested = false;
+            ZNetView zNetView = pickable.m_nview ? pickable.m_nview : pickable.GetComponent<ZNetView>();
+            if (!wasPicked && zNetView && zNetView.IsValid())
             {
-                zNetView.InvokeRPC("Pick", Array.Empty<object>());
+                zNetView.InvokeRPC(nameof(Pickable.RPC_Pick), 0);
+                pickRequested = true;
             }
 
-            resources = RemovePickableFromRequirements(resources, pickable);
+            resources = RemovePickableFromRequirements(resources, pickable, wasPicked || pickRequested);
         }
 
         return resources;
@@ -522,24 +605,42 @@ internal static class HarnessPrefabsPlacedPiecePatches
 
     private static void DropItemStandItems(Piece piece)
     {
-        ZNetView zNetView = piece.GetComponent<ZNetView>();
-        if (!zNetView || !zNetView.IsValid())
-        {
-            return;
-        }
-
         foreach (ItemStand itemStand in piece.GetComponentsInChildren<ItemStand>())
         {
+            if (!itemStand)
+            {
+                continue;
+            }
+
+            ZNetView zNetView = itemStand.m_nview
+                ? itemStand.m_nview
+                : itemStand.m_netViewOverride
+                    ? itemStand.m_netViewOverride
+                    : itemStand.GetComponent<ZNetView>();
+            if (!zNetView || !zNetView.IsValid())
+            {
+                continue;
+            }
+
             bool canBeRemoved = itemStand.m_canBeRemoved;
-            itemStand.m_canBeRemoved = true;
-            zNetView.InvokeRPC("DropItem", Array.Empty<object>());
-            itemStand.m_canBeRemoved = canBeRemoved;
+            try
+            {
+                itemStand.m_canBeRemoved = true;
+                zNetView.InvokeRPC(nameof(ItemStand.RPC_DropItem));
+            }
+            finally
+            {
+                itemStand.m_canBeRemoved = canBeRemoved;
+            }
         }
     }
 
-    private static Piece.Requirement[] RemovePickableFromRequirements(Piece.Requirement[] requirements, Pickable pickable)
+    private static Piece.Requirement[] RemovePickableFromRequirements(
+        Piece.Requirement[] requirements,
+        Pickable pickable,
+        bool pickedOrRequested)
     {
-        if (requirements == null || !pickable || !pickable.m_picked || !pickable.m_itemPrefab)
+        if (requirements == null || !pickable || !pickedOrRequested || !pickable.m_itemPrefab)
         {
             return requirements;
         }

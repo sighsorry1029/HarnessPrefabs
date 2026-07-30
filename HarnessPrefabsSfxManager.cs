@@ -22,9 +22,7 @@ internal static class HarnessPrefabsSfxManager
     private static readonly Dictionary<string, EffectData> RemovalSfx = new(StringComparer.Ordinal)
     {
         ["sfx_rock_destroyed"] = null,
-        ["sfx_wood_destroyed"] = null,
-        ["sfx_treasurechest_destroyed"] = null,
-        ["sfx_ship_destroyed"] = null
+        ["sfx_wood_destroyed"] = null
     };
 
     private static bool _initialized;
@@ -87,11 +85,6 @@ internal static class HarnessPrefabsSfxManager
         Piece piece = wearNTear ? wearNTear.GetComponent<Piece>() : null;
         CraftingStation station = piece ? piece.m_craftingStation : null;
         return FixRemovalSfx(wearNTear ? wearNTear.m_destroyedEffect : null, station);
-    }
-
-    public static EffectList FixRemovalSfx(Piece piece)
-    {
-        return FixRemovalSfx(piece ? piece.m_placeEffect : null, piece ? piece.m_craftingStation : null);
     }
 
     private static EffectList FixRemovalSfx(EffectList effectList, CraftingStation station)

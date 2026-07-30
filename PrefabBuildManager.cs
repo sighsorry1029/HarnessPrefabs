@@ -17,17 +17,11 @@ internal static class PrefabBuildManager
 {
     private static readonly HashSet<GameObject> AddedPrefabs = new();
     private static readonly HashSet<string> AddedAdminPieceNames = new(StringComparer.Ordinal);
-    private static bool _initialized;
     private static bool _jotunnPiecesRegistered;
     private static bool _refreshing;
     private static bool? _lastHarnessHammerTabsEnabled;
     private static bool _hasCompletedFullRefresh;
     private static string _lastFullRefreshSignature = "";
-
-    public static void Initialize()
-    {
-        _initialized = true;
-    }
 
     public static void MarkJotunnPiecesRegistered()
     {
@@ -36,11 +30,6 @@ internal static class PrefabBuildManager
 
     public static void RefreshIfHarnessHammerVisibilityChanged()
     {
-        if (!_initialized)
-        {
-            return;
-        }
-
         bool harnessEnabled = HarnessPrefabsPlugin.HarnessHammerTabsEnabled;
         if (_lastHarnessHammerTabsEnabled.HasValue &&
             _lastHarnessHammerTabsEnabled.Value == harnessEnabled)
@@ -48,13 +37,12 @@ internal static class PrefabBuildManager
             return;
         }
 
-        _lastHarnessHammerTabsEnabled = harnessEnabled;
         RefreshFromCachedRules("harness hammer visibility changed");
     }
 
     public static void Refresh(string reason)
     {
-        if (!_initialized || _refreshing)
+        if (_refreshing)
         {
             return;
         }
@@ -64,7 +52,7 @@ internal static class PrefabBuildManager
             return;
         }
 
-        if (!_jotunnPiecesRegistered && reason != "Jotunn.OnPiecesRegistered")
+        if (!_jotunnPiecesRegistered)
         {
             return;
         }
@@ -87,7 +75,6 @@ internal static class PrefabBuildManager
         _refreshing = true;
         Stopwatch total = Stopwatch.StartNew();
         long afterSetup = 0;
-        long afterRemove = 0;
         long afterExisting = 0;
         long afterDiscover = 0;
         long afterRules = 0;
@@ -97,9 +84,6 @@ internal static class PrefabBuildManager
         {
             HarnessPrefabsPlugin.EnsureSourceOfTruthFileMode();
             afterSetup = total.ElapsedMilliseconds;
-            RemoveAddedPieces(hammer);
-            RemoveAdminCategoryTabs(hammer);
-            afterRemove = total.ElapsedMilliseconds;
             HashSet<string> existingBuildables = CollectExistingBuildables();
             existingBuildableCount = existingBuildables.Count;
             afterExisting = total.ElapsedMilliseconds;
@@ -123,8 +107,7 @@ internal static class PrefabBuildManager
                 reason,
                 total.ElapsedMilliseconds,
                 afterSetup,
-                afterRemove - afterSetup,
-                afterExisting - afterRemove,
+                afterExisting - afterSetup,
                 afterDiscover - afterExisting,
                 afterRules - afterDiscover,
                 total.ElapsedMilliseconds - afterRules,
@@ -136,7 +119,7 @@ internal static class PrefabBuildManager
 
     public static void RefreshFromCachedRules(string reason)
     {
-        if (!_initialized || _refreshing)
+        if (_refreshing)
         {
             return;
         }
@@ -251,9 +234,22 @@ internal static class PrefabBuildManager
                 discovery.Name,
                 MvbpPrefabDefaults.NeedsPlacementPatch(discovery.Name),
                 MvbpCompatibilityDefaults.GetPlacementOffset(discovery.Name));
-            if (discovery.Prefab && TryAddPrefabToHammer(discovery.Prefab, rule, hammer))
+            if (!discovery.Prefab)
             {
-                AddedPrefabs.Add(discovery.Prefab);
+                continue;
+            }
+
+            try
+            {
+                if (TryAddPrefabToHammer(discovery.Prefab, rule, hammer))
+                {
+                    AddedPrefabs.Add(discovery.Prefab);
+                }
+            }
+            catch (Exception ex)
+            {
+                HarnessPrefabsPlugin.Log.LogError(
+                    $"Prefab '{discovery.Name}' materialization failed and will be skipped: {ex}");
             }
         }
 
@@ -526,22 +522,7 @@ internal static class PrefabBuildManager
 
     private static void RemoveAddedPieces(PieceTable hammer)
     {
-        if (!hammer || hammer.m_pieces == null || AddedPrefabs.Count == 0)
-        {
-            AddedPrefabs.Clear();
-            AddedAdminPieceNames.Clear();
-            return;
-        }
-
-        for (int i = hammer.m_pieces.Count - 1; i >= 0; i--)
-        {
-            GameObject piece = hammer.m_pieces[i];
-            if (piece && AddedPrefabs.Contains(piece))
-            {
-                hammer.m_pieces.RemoveAt(i);
-            }
-        }
-
+        RemoveAddedPiecesFromTable(hammer);
         AddedPrefabs.Clear();
         AddedAdminPieceNames.Clear();
     }
@@ -706,7 +687,7 @@ internal static class PrefabBuildManager
         AppendPrefabNames(builder, "znet", ZNetScene.instance.m_prefabs);
         AppendPrefabNames(builder, "nonnv", ZNetScene.instance.m_nonNetViewPrefabs);
         AppendPieceTableMembership(builder, hammer);
-        return HarnessPrefabsReferenceState.ComputeStableHash(builder.ToString());
+        return builder.ToString();
     }
 
     private static void AppendPrefabNames(StringBuilder builder, string label, IEnumerable<GameObject> prefabs)
@@ -746,7 +727,6 @@ internal static class PrefabBuildManager
         string reason,
         long totalMs,
         long setupMs,
-        long removeMs,
         long existingMs,
         long discoverMs,
         long rulesMs,
@@ -760,7 +740,7 @@ internal static class PrefabBuildManager
         }
 
         HarnessPrefabsPlugin.Log.LogInfo(
-            $"Refresh profile ({reason}): total={totalMs} ms, setup={setupMs} ms, cleanup={removeMs} ms, existingBuildables={existingMs} ms/{existingBuildableCount}, discover={discoverMs} ms/{discoveryCount}, rules={rulesMs} ms/{PrefabRuleStore.ActiveRuleCount}, apply={applyMs} ms, visible={AddedPrefabs.Count}.");
+            $"Refresh profile ({reason}): total={totalMs} ms, setup={setupMs} ms, existingBuildables={existingMs} ms/{existingBuildableCount}, discover={discoverMs} ms/{discoveryCount}, rules={rulesMs} ms/{PrefabRuleStore.ActiveRuleCount}, apply={applyMs} ms, visible={AddedPrefabs.Count}.");
     }
 
     private static void LogCachedRefreshProfile(string reason, long totalMs, int discoveryCount)

@@ -13,13 +13,6 @@ public enum PrefabAccess
 
 internal static class BuildCategories
 {
-    private static readonly HashSet<string> AdminCategoryNames = new(StringComparer.Ordinal)
-    {
-        HarnessProps,
-        HarnessNature,
-        HarnessStructures
-    };
-
     public const string Misc = "Misc";
     public const string Crafting = "Crafting";
     public const string Building = "Building";
@@ -29,6 +22,20 @@ internal static class BuildCategories
     public const string HarnessNature = "Harness Nature";
     public const string HarnessStructures = "Harness Structures";
 
+    private static readonly Dictionary<string, string> CanonicalNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [Misc] = Misc,
+        [Crafting] = Crafting,
+        [Building] = Building,
+        ["BuildingWorkbench"] = Building,
+        [Stonecutter] = Stonecutter,
+        ["Stonecutter"] = Stonecutter,
+        [Furniture] = Furniture,
+        [HarnessProps] = HarnessProps,
+        [HarnessNature] = HarnessNature,
+        [HarnessStructures] = HarnessStructures
+    };
+
     public static bool IsAdminCategory(string categoryName)
     {
         if (string.IsNullOrWhiteSpace(categoryName))
@@ -36,8 +43,7 @@ internal static class BuildCategories
             return false;
         }
 
-        string trimmed = categoryName.Trim();
-        return AdminCategoryNames.Contains(trimmed);
+        return NormalizeCategory(categoryName) is HarnessProps or HarnessNature or HarnessStructures;
     }
 
     public static string NormalizeCategory(string categoryName)
@@ -47,7 +53,10 @@ internal static class BuildCategories
             return HarnessProps;
         }
 
-        return categoryName.Trim();
+        string trimmed = categoryName.Trim();
+        return CanonicalNames.TryGetValue(trimmed, out string canonicalName)
+            ? canonicalName
+            : trimmed;
     }
 }
 

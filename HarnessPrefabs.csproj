@@ -14,6 +14,9 @@
         <FileAlignment>512</FileAlignment>
         <LangVersion>preview</LangVersion>
         <Nullable>enable</Nullable>
+        <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
+        <BuildPackages Condition="'$(BuildPackages)' == '' And '$(Configuration)' == 'Release'">true</BuildPackages>
+        <BuildPackages Condition="'$(BuildPackages)' == ''">false</BuildPackages>
     </PropertyGroup>
     <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
         <PlatformTarget>AnyCPU</PlatformTarget>
@@ -157,7 +160,6 @@
         <Compile Include="PrefabRequirementParser.cs"/>
         <Compile Include="PrefabRule.cs"/>
         <Compile Include="PrefabRuleStore.cs"/>
-        <Compile Include="HarnessPrefabsReferenceState.cs"/>
         <Compile Include="Plugin.cs"/>
         <Compile Include="Properties\AssemblyInfo.cs"/>
         <Compile Include="HarnessPrefabsPatches.cs"/>
@@ -202,7 +204,9 @@
     <Target Name="KeyManager" AfterTargets="ILRepack" Condition="'$(AfterTargets)' == 'KeyManager'">
         <Seal DLL="$(TargetPath)"/>
     </Target>
-    <Target Name="GetAssemblyVersion" AfterTargets="$(AfterTargets)">
+    <Target Name="GetAssemblyVersion"
+            AfterTargets="$(AfterTargets)"
+            Condition="'$(DeployToGame)' == 'true' Or '$(BuildPackages)' == 'true'">
         <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
             <Output TaskParameter="Assemblies" ItemName="Targets"/>
         </GetAssemblyIdentity>
@@ -221,20 +225,26 @@
             <PackageDir>$(ProjectDir)\Thunderstore\$(PackageName)</PackageDir>
         </PropertyGroup>
     </Target>
-    <Target Name="CopyOutputDLL" AfterTargets="GetAssemblyVersion">
+    <Target Name="CopyOutputDLL"
+            AfterTargets="GetAssemblyVersion"
+            Condition="'$(DeployToGame)' == 'true'">
         <Error Text="DLL not found in target directory." Condition="!Exists('$(TargetDir)$(AssemblyName).dll')"/>
         <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath)" OverwriteReadOnlyFiles="true"/>
         <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath2)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath2)')"/>
         <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath3)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath3)')"/>
     </Target>
-    <Target Name="CopyReadMeToTSFolder" AfterTargets="CopyOutputDLL" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
+    <Target Name="CopyReadMeToTSFolder"
+            AfterTargets="GetAssemblyVersion"
+            Condition="'$(BuildPackages)' == 'true' And ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT')">
         <Warning Text="README.md not found in project directory. A default README.md file will be created for the Thunderstore package" Condition="!Exists('$(ProjectDir)README.md')"/>
         <WriteLinesToFile File="$(ProjectDir)README.md" Lines="Default Readme file from one of Azumatt's Templates. Replace this with actual content." Overwrite="false" Condition="!Exists('$(ProjectDir)README.md')"/>
         <RemoveDir Directories="$(PackageDir)" Condition="Exists('$(PackageDir)')"/>
         <MakeDir Directories="$(PackageDir)"/>
         <Copy SourceFiles="$(ProjectDir)README.md" DestinationFolder="$(PackageDir)" OverwriteReadOnlyFiles="true"/>
     </Target>
-    <Target Name="UpdateManifestVersion" AfterTargets="CopyReadMeToTSFolder" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
+    <Target Name="UpdateManifestVersion"
+            AfterTargets="CopyReadMeToTSFolder"
+            Condition="'$(BuildPackages)' == 'true' And ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT')">
         <Error Text="manifest.json not found in Thunderstore directory." Condition="!Exists('$(ProjectDir)Thunderstore\manifest.json')"/>
         <ItemGroup>
             <ManifestFile Include="$(ProjectDir)Thunderstore\manifest.json"/>
@@ -243,7 +253,9 @@
         <Message Text="Updating version number in Thunderstore\manifest.json" Condition="Exists(@(ManifestFile))"/>
         <Exec Command="powershell.exe -ExecutionPolicy Bypass -Command &quot;&amp; { &amp; '$(ProjectDir)UpdateManifest.ps1' -manifestFile '@(ManifestFile)' -versionString '$(PackageVersion)' }&quot;"/>
     </Target>
-    <Target Name="MakeThunderstorePackage" AfterTargets="UpdateManifestVersion" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <Target Name="MakeThunderstorePackage"
+            AfterTargets="UpdateManifestVersion"
+            Condition="'$(BuildPackages)' == 'true' And '$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
         <Error Text="manifest.json not found in Thunderstore directory." Condition="!Exists('$(ProjectDir)\Thunderstore\manifest.json')"/>
         <Error Text="icon.png not found in Thunderstore directory. Please note that Thunderstore requires this image to be 256x256 in dimension" Condition="!Exists('$(ProjectDir)\Thunderstore\icon.png')"/>
         <ItemGroup>
@@ -257,7 +269,9 @@
         <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Thunderstore\$(PackageName).zip" Overwrite="true"/>
         <RemoveDir Directories="$(PackageDir)"/>
     </Target>
-    <Target Name="MakeNexusPackage" AfterTargets="MakeThunderstorePackage" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <Target Name="MakeNexusPackage"
+            AfterTargets="MakeThunderstorePackage"
+            Condition="'$(BuildPackages)' == 'true' And '$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
         <MakeDir Directories="$(ProjectDir)\Nexus"/>
         <ItemGroup>
             <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;"/>

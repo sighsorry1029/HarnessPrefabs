@@ -23,6 +23,18 @@ internal static class HarnessPrefabsRuntime
         return TryGetManagedRule(component ? component.gameObject : null, out rule);
     }
 
+    public static bool TryGetKnownManagedPlacedPiece(Component component, out Piece piece)
+    {
+        piece = component ? component.GetComponentInParent<Piece>() : null;
+        if (!piece || !piece.IsPlacedByPlayer())
+        {
+            return false;
+        }
+
+        string normalizedName = NormalizePrefabName(piece.gameObject.name);
+        return normalizedName.Length > 0 && PrefabRuleStore.TryGetRule(normalizedName, out _);
+    }
+
     public static bool TryGetManagedRule(string prefabName, out PrefabRule rule)
     {
         rule = null;

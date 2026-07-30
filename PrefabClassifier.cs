@@ -35,32 +35,10 @@ internal static class PrefabClassifier
         Child<InstanceRenderer>(),
         Child<ParticleSystem>(),
         Child<TimedDestruction>(),
-        Root<CreatureSpawner>(),
-        Root<SpawnArea>(),
-        Root<TriggerSpawner>(),
         Child<Projectile>(),
-        Root<Humanoid>(),
-        Root<AnimalAI>(),
-        Root<Character>(),
-        Root<ItemDrop>(),
-        Child<DungeonGenerator>(),
-        Child<TerrainModifier>(),
-        Child<EventZone>(),
-        Child<LocationProxy>(),
-        Child<LootSpawner>(),
-        Child<Mister>(),
         Child<Ragdoll>(),
-        Child<TombStone>(),
-        Child<LiquidVolume>(),
-        Child<Gibber>(),
-        Child<ShipConstructor>(),
-        Child<TeleportAbility>(),
-        Child<Trader>(),
         Child<Aoe>(),
-        Child<CamShaker>(),
-        Child<Fish>(),
-        Child<RandomFlyingBird>(),
-        Child<MusicLocation>()
+        Child<CamShaker>()
     };
 
     private static readonly Type[] AlwaysExcludedChildTypes =
@@ -375,11 +353,7 @@ internal static class PrefabClassifier
             return false;
         }
 
-        return components.Contains("TimedDestruction")
-               || components.Contains("Aoe")
-               || components.Contains("CamShaker")
-               || components.Contains("Projectile")
-               || components.Contains("Ragdoll");
+        return components.Contains("TimedDestruction");
     }
 
     private static bool IsRuntimeName(string name)

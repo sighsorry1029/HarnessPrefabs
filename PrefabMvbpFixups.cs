@@ -488,17 +488,18 @@ internal static class PrefabMvbpFixups
         {
             MeshFilter trailerHull = FindDeepChild(prefab.transform, "hull")?.GetComponent<MeshFilter>();
             MeshFilter vikingHull = vikingShip ? FindDeepChild(vikingShip.transform, "hull")?.GetComponent<MeshFilter>() : null;
-            if (trailerHull && vikingHull && vikingHull.sharedMesh)
+            bool hullFixupComplete = trailerHull && vikingHull && vikingHull.sharedMesh;
+            if (hullFixupComplete)
             {
                 trailerHull.sharedMesh = vikingHull.sharedMesh;
             }
 
             GameObject shield = ZNetScene.instance ? ZNetScene.instance.GetPrefab("ShieldBanded") : null;
-            staticFixupsComplete = vikingShip && shield;
             MeshRenderer shieldRenderer = shield ? shield.GetComponentInChildren<MeshRenderer>(true) : null;
             Material shieldMaterial = shieldRenderer ? shieldRenderer.sharedMaterial : null;
             Transform storage = prefab.transform.Find("ship/visual/Customize/storage");
-            if (shieldMaterial && storage)
+            bool shieldFixupComplete = shieldMaterial && storage;
+            if (shieldFixupComplete)
             {
                 for (int i = 0; i < storage.childCount; i++)
                 {
@@ -515,10 +516,13 @@ internal static class PrefabMvbpFixups
 
             Cloth trailerSail = FindDeepChild(prefab.transform, "sail_full")?.GetComponent<Cloth>();
             Cloth vikingSail = vikingShip ? FindDeepChild(vikingShip.transform, "sail_full")?.GetComponent<Cloth>() : null;
-            if (trailerSail && vikingSail)
+            bool sailFixupComplete = trailerSail && vikingSail;
+            if (sailFixupComplete)
             {
                 trailerSail.coefficients = vikingSail.coefficients;
             }
+
+            staticFixupsComplete = hullFixupComplete && shieldFixupComplete && sailFixupComplete;
         }
 
         Ship ship = prefab.GetComponent<Ship>();
@@ -542,15 +546,22 @@ internal static class PrefabMvbpFixups
 
             ApplyTrailershipMovementProfile(ship, vikingShipComponent);
         }
+        else if (applyStaticFixups)
+        {
+            staticFixupsComplete = false;
+        }
 
         if (applyStaticFixups)
         {
             ShipControlls controls = FindDeepChild(prefab.transform, "rudder_button")?.GetComponent<ShipControlls>();
             Transform attachPoint = prefab.transform.Find("sit locations/sit_box (4)/attachpoint");
-            if (controls && attachPoint)
+            bool controlsFixupComplete = controls && attachPoint;
+            if (controlsFixupComplete)
             {
                 controls.m_attachPoint = attachPoint;
             }
+
+            staticFixupsComplete &= controlsFixupComplete;
         }
 
         return staticFixupsComplete;
@@ -590,9 +601,8 @@ internal static class PrefabMvbpFixups
         ship.m_rudderRotationMax = vikingShip.m_rudderRotationMax;
     }
 
-    private static bool EnsureTrailershipAshlandsDamageEffects(GameObject prefab, Ship ship, GameObject vikingShip)
+    private static void EnsureTrailershipAshlandsDamageEffects(GameObject prefab, Ship ship, GameObject vikingShip)
     {
-        bool applied = false;
         if (!ship.m_ashdamageEffects)
         {
             Transform sourceEffects = vikingShip ? FindDeepChild(vikingShip.transform, "ashdamageeffects") : null;
@@ -614,7 +624,6 @@ internal static class PrefabMvbpFixups
             }
 
             ship.m_ashdamageEffects = effects;
-            applied = true;
         }
 
         if (ship.m_ashdamageEffects)
@@ -622,8 +631,6 @@ internal static class PrefabMvbpFixups
             ship.m_ashdamageEffects.SetActive(false);
             ship.m_ashlandsFxAudio = ship.m_ashdamageEffects.GetComponentsInChildren<AudioSource>(true).ToList();
         }
-
-        return applied;
     }
 
     private static Transform FindDeepChild(Transform root, string childName)
@@ -734,21 +741,21 @@ internal static class PrefabMvbpFixups
 
     private static bool MoveSnapPoints(GameObject prefab, params (string name, Vector3 localPosition)[] moves)
     {
-        bool any = false;
+        bool all = true;
         foreach ((string name, Vector3 localPosition) in moves)
         {
             Transform snap = prefab.transform.Find(name);
             if (!snap)
             {
+                all = false;
                 continue;
             }
 
             snap.localPosition = localPosition;
             snap.tag = "snappoint";
-            any = true;
         }
 
-        return any;
+        return all;
     }
 
     private static bool AddSnapPointsToMeshCorners(GameObject prefab, string meshName)

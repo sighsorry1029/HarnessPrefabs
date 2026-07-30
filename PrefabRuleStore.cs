@@ -20,8 +20,6 @@ internal static class PrefabRuleStore
     public const string FullScaffoldFileName = "prefabs.full.yml";
 
     private const string DomainName = "prefabs";
-    private const string ReferenceStateKey = "prefabs";
-    private const string ReferenceLogicVersion = "harnessprefabs.prefabs.reference.v2";
     private static readonly ISerializer SparseSerializer = new SerializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .WithTypeConverter(new PrefabRequirementYamlConverter())
@@ -48,7 +46,6 @@ internal static class PrefabRuleStore
     private static Dictionary<string, PrefabRule> _activeRules = new(StringComparer.Ordinal);
     private static List<PrefabDiscovery> _lastDiscoveries = new();
     private static string? _lastSyncedRulesPayload;
-    private static string? _lastPublishedRulesPayload;
 
     public static string RulesDirectory => Path.Combine(Paths.ConfigPath, HarnessPrefabsPlugin.ModName);
     public static string RulesPath => Path.Combine(RulesDirectory, OverrideFileName);
@@ -312,8 +309,6 @@ internal static class PrefabRuleStore
         {
             rule.Access = ResolveAccess(entry.Enabled.Value, rule.Category);
         }
-
-        NormalizeRule(rule);
     }
 
     private static Dictionary<string, PrefabRuleEntry> LoadOverridesFromDisk()
@@ -458,7 +453,6 @@ internal static class PrefabRuleStore
         }
 
         _activeRules = rules;
-        _lastPublishedRulesPayload = yaml;
         try
         {
             WriteReferenceArtifact(discoveries, rules);
@@ -476,30 +470,8 @@ internal static class PrefabRuleStore
             return;
         }
 
-        string sourceSignature = ComputeReferenceSourceSignature(discoveries, rules);
-        if (HarnessPrefabsReferenceState.ShouldSkip(ReferenceStateKey, ReferencePath, sourceSignature, ReferenceLogicVersion))
-        {
-            return;
-        }
-
-        WriteIfChanged(ReferencePath, BuildReferenceContent(discoveries, rules));
-        HarnessPrefabsReferenceState.Record(ReferenceStateKey, ReferencePath, sourceSignature, ReferenceLogicVersion);
-    }
-
-    private static string ComputeReferenceSourceSignature(IReadOnlyCollection<PrefabDiscovery> discoveries, IReadOnlyDictionary<string, PrefabRule> rules)
-    {
-        StringBuilder builder = new();
-        builder.AppendLine(ReferenceLogicVersion);
-        foreach (PrefabDiscovery discovery in discoveries
-                     .Where(discovery => rules.ContainsKey(discovery.Name))
-                     .OrderBy(discovery => discovery.Name, StringComparer.OrdinalIgnoreCase))
-        {
-            builder.Append(discovery.Name);
-            builder.Append('|');
-            builder.AppendLine(SparseSerializer.Serialize(ToReferenceEntry(discovery.Name, rules[discovery.Name])));
-        }
-
-        return HarnessPrefabsReferenceState.ComputeStableHash(builder.ToString());
+        string content = BuildReferenceContent(discoveries, rules);
+        WriteIfChanged(ReferencePath, content);
     }
 
     private static string BuildReferenceContent(IEnumerable<PrefabDiscovery> discoveries, IReadOnlyDictionary<string, PrefabRule> rules)
@@ -572,43 +544,6 @@ internal static class PrefabRuleStore
         return entry;
     }
 
-    private static PrefabRuleEntry ToSyncedPolicyEntry(string prefabName, PrefabRule rule)
-    {
-        PrefabRuleEntry entry = new()
-        {
-            Prefab = prefabName,
-            Enabled = true,
-            Category = rule.Category
-        };
-
-        if (!string.IsNullOrWhiteSpace(rule.DisplayName))
-        {
-            entry.DisplayName = rule.DisplayName;
-        }
-
-        if (!string.IsNullOrWhiteSpace(rule.Description))
-        {
-            entry.Description = rule.Description;
-        }
-
-        if (!IsNone(rule.CraftingStation))
-        {
-            entry.CraftingStation = rule.CraftingStation;
-        }
-
-        if (rule.Requirements is { Count: > 0 })
-        {
-            entry.Requirements = PrefabRequirementParser.Clone(rule.Requirements);
-        }
-
-        if (!HasDefaultFlags(rule))
-        {
-            entry.Flags = FormatFlags(rule);
-        }
-
-        return entry;
-    }
-
     private static PrefabRuleEntry ToSyncedOverrideEntry(string prefabName, PrefabRule rule, PrefabRule defaultRule)
     {
         PrefabRuleEntry entry = new()
@@ -672,24 +607,29 @@ internal static class PrefabRuleStore
 
     private static List<PrefabRuleEntry> ToFullEntries(IReadOnlyDictionary<string, PrefabRule> rules)
     {
-        Dictionary<string, PrefabRule> normalized = NormalizeRules(rules);
-        return normalized
+        return rules
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal)
             .Select(pair => ToFullEntry(pair.Key, pair.Value))
             .ToList();
     }
 
     private static List<PrefabRuleEntry> ToSyncedPolicyEntries(IReadOnlyDictionary<string, PrefabRule> rules, IReadOnlyCollection<PrefabDiscovery> discoveries)
     {
-        Dictionary<string, PrefabRule> normalized = NormalizeRules(rules);
         Dictionary<string, PrefabRule> defaults = discoveries
             .Where(discovery => !string.IsNullOrWhiteSpace(discovery.Name))
             .GroupBy(discovery => NormalizePrefabName(discovery.Name), StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => CreateDefaultRule(group.First()), StringComparer.Ordinal);
 
-        return normalized
-            .Select(pair => defaults.TryGetValue(pair.Key, out PrefabRule defaultRule)
-                ? ToSyncedOverrideEntry(pair.Key, pair.Value, defaultRule)
-                : ToSyncedPolicyEntry(pair.Key, pair.Value))
+        if (rules.Count != defaults.Count || rules.Keys.Any(prefabName => !defaults.ContainsKey(prefabName)))
+        {
+            throw new InvalidDataException("Active prefab rules must have exactly one matching discovery default before synchronization.");
+        }
+
+        return rules
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => ToSyncedOverrideEntry(pair.Key, pair.Value, defaults[pair.Key]))
             .Where(HasSyncedOverrideFields)
             .ToList();
     }
@@ -843,14 +783,6 @@ internal static class PrefabRuleStore
             FormatBool(rule.AllowedInDungeons),
             FormatBool(rule.CanBeRemoved)
         });
-    }
-
-    private static bool HasDefaultFlags(PrefabRule rule)
-    {
-        return !rule.ClipEverything &&
-               !rule.ClipGround &&
-               !rule.AllowedInDungeons &&
-               rule.CanBeRemoved;
     }
 
     private static string FormatBool(bool value)

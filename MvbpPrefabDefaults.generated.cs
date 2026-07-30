@@ -411,7 +411,7 @@ internal static partial class MvbpPrefabDefaults
         ["Pickable_Fiddlehead"] = new MvbpPrefabDefault(false, false, "Nature", "None", "", true, false, false, null, null, "None"),
         ["Pickable_Fishingrod"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "", true, false, false, null, null, "Treasure"),
         ["Pickable_Flax"] = new MvbpPrefabDefault(false, false, "Nature", "None", "Flax:1", false, false, false, null, null, "VanillaCrop"),
-        ["Pickable_Flax"] = new MvbpPrefabDefault(false, false, "Nature", "None", "Flax:1", false, false, false, null, null, "VanillaCrop"),
+        ["Pickable_Flax_Wild"] = new MvbpPrefabDefault(false, false, "Nature", "None", "Flax:1", false, false, false, null, null, "VanillaCrop"),
         ["Pickable_Flint"] = new MvbpPrefabDefault(false, false, "Nature", "None", "Flint:5", true, false, false, null, null, "Flora"),
         ["Pickable_ForestCryptRemains01"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "", true, false, false, null, null, "Treasure"),
         ["Pickable_ForestCryptRemains02"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "", true, false, false, null, null, "Treasure"),

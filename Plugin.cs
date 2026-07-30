@@ -16,7 +16,7 @@ namespace HarnessPrefabs;
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.2";
+    internal const string ModVersion = "1.0.3";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string JotunnGuid = "com.jotunn.jotunn";
@@ -72,43 +72,47 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 
         bool saveOnSet = Config.SaveOnConfigSet;
         Config.SaveOnConfigSet = false;
+        try
+        {
+            LockConfiguration = BindSynced("1 - General", "Lock Configuration", Toggle.On, "If on, prefab policy is controlled by the server and can only be changed by admins.");
+            VerboseLogging = BindSynced("1 - General", "Verbose Logging", Toggle.Off, "If on, writes detailed prefab discovery and hammer registration logs.", synchronizedSetting: false);
+            ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, Harness Hammer tabs are visible to admin clients while Valheim debugmode is enabled. If off, Harness tabs stay hidden even in debugmode.", synchronizedSetting: false);
+            ShowHarnessPrefabTabs.SettingChanged += (_, _) => PrefabBuildManager.RefreshIfHarnessHammerVisibilityChanged();
+            TrailershipVikingShipSpeedRatio = BindSynced(
+                "2 - Prefab Tweaks",
+                "Trailership VikingShip Speed Ratio",
+                0.66f,
+                new ConfigDescription(
+                    "Controls Trailership movement speed relative to VikingShip. 0.5 is half speed, 1.0 matches VikingShip.",
+                    new AcceptableValueRange<float>(0.5f, 1f)));
+            TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
+            EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
+            UnsafeFermenterPatchDurationPercent = BindSynced(
+                "2 - Prefab Tweaks",
+                "Fermenter Patch Duration Percent",
+                0,
+                new ConfigDescription(
+                    "0 disables the dvergrprops_barrel fermenter patch. 1-100 enables the patch and sets fermentation time as a percentage of the vanilla fermenter duration. 70 matches the old MVBP behavior. Unsafe: disabling the mod later can affect fermenting contents.",
+                    new AcceptableValueRange<int>(0, 100)));
+            _ = SyncedConfig.AddLockingConfigEntry(LockConfiguration);
 
-        LockConfiguration = BindSynced("1 - General", "Lock Configuration", Toggle.On, "If on, prefab policy is controlled by the server and can only be changed by admins.");
-        VerboseLogging = BindSynced("1 - General", "Verbose Logging", Toggle.Off, "If on, writes detailed prefab discovery and hammer registration logs.", synchronizedSetting: false);
-        ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, Harness Hammer tabs are visible to admin clients while Valheim debugmode is enabled. If off, Harness tabs stay hidden even in debugmode.", synchronizedSetting: false);
-        ShowHarnessPrefabTabs.SettingChanged += (_, _) => PrefabBuildManager.RefreshIfHarnessHammerVisibilityChanged();
-        TrailershipVikingShipSpeedRatio = BindSynced(
-            "2 - Prefab Tweaks",
-            "Trailership VikingShip Speed Ratio",
-            0.66f,
-            new ConfigDescription(
-                "Controls Trailership movement speed relative to VikingShip. 0.5 is half speed, 1.0 matches VikingShip.",
-                new AcceptableValueRange<float>(0.5f, 1f)));
-        TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
-        EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
-        UnsafeFermenterPatchDurationPercent = BindSynced(
-            "2 - Prefab Tweaks",
-            "Fermenter Patch Duration Percent",
-            0,
-            new ConfigDescription(
-                "0 disables the dvergrprops_barrel fermenter patch. 1-100 enables the patch and sets fermentation time as a percentage of the vanilla fermenter duration. 70 matches the old MVBP behavior. Unsafe: disabling the mod later can affect fermenting contents.",
-                new AcceptableValueRange<int>(0, 100)));
-        _ = SyncedConfig.AddLockingConfigEntry(LockConfiguration);
+            PrefabLocalizationOverrideManager.Initialize(SyncedConfig);
+            PrefabRuleStore.Initialize(SyncedRules);
+            HarnessPrefabsConsoleCommands.Register();
+            SyncedRules.ValueChanged += OnSyncedRulesChanged;
+            SyncedConfig.SourceOfTruthChanged += OnSourceOfTruthChanged;
+            PieceManager.OnPiecesRegistered += OnJotunnPiecesRegistered;
 
-        PrefabLocalizationOverrideManager.Initialize(SyncedConfig);
-        PrefabRuleStore.Initialize(SyncedRules);
-        PrefabBuildManager.Initialize();
-        HarnessPrefabsConsoleCommands.Register();
-        SyncedRules.ValueChanged += OnSyncedRulesChanged;
-        SyncedConfig.SourceOfTruthChanged += OnSourceOfTruthChanged;
-        PieceManager.OnPiecesRegistered += OnJotunnPiecesRegistered;
+            _harmony.PatchAll(typeof(HarnessPrefabsPlugin).Assembly);
+            SetupConfigWatcher();
 
-        _harmony.PatchAll(typeof(HarnessPrefabsPlugin).Assembly);
-        SetupConfigWatcher();
-
-        SaveConfig(reload: false);
-        _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
-        Config.SaveOnConfigSet = saveOnSet;
+            SaveConfig(reload: false);
+            _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
+        }
+        finally
+        {
+            Config.SaveOnConfigSet = saveOnSet;
+        }
 
         Log.LogInfo($"{ModName} {ModVersion} loaded.");
     }
@@ -173,10 +177,12 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
             return;
         }
 
-        _sourceOfTruthFileModeReady = true;
         Instance?.SetupRuleWatcher();
         PrefabLocalizationOverrideManager.SetupFileWatcher();
-        PrefabLocalizationOverrideManager.ReloadFromDiskAndSync();
+        if (PrefabLocalizationOverrideManager.ReloadFromDiskAndSync())
+        {
+            _sourceOfTruthFileModeReady = true;
+        }
     }
 
     private static HarnessPrefabsPlugin? Instance { get; set; }
@@ -325,19 +331,24 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     {
         bool originalSaveOnSet = Config.SaveOnConfigSet;
         Config.SaveOnConfigSet = false;
-        if (reload)
+        try
         {
-            Config.Reload();
-        }
+            if (reload)
+            {
+                Config.Reload();
+            }
 
-        Config.Save();
-        Config.SaveOnConfigSet = originalSaveOnSet;
+            Config.Save();
+        }
+        finally
+        {
+            Config.SaveOnConfigSet = originalSaveOnSet;
+        }
     }
 
     private ConfigEntry<T> BindSynced<T>(string group, string name, T value, string description, bool synchronizedSetting = true)
     {
-        ConfigDescription extendedDescription = new(description + (synchronizedSetting ? " [Synced with Server]" : " [Not Synced with Server]"));
-        return BindSynced(group, name, value, extendedDescription, synchronizedSetting);
+        return BindSynced(group, name, value, new ConfigDescription(description), synchronizedSetting);
     }
 
     private ConfigEntry<T> BindSynced<T>(string group, string name, T value, ConfigDescription description, bool synchronizedSetting = true)

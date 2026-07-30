@@ -122,7 +122,8 @@ internal static class PrefabOwnerCatalog
 
     private static void EnsureModMappingsLoaded()
     {
-        string signature = BuildSignature();
+        List<PluginResourceSnapshot> plugins = GetPluginResources();
+        string signature = BuildSignature(plugins);
         if (string.Equals(signature, _loadedModSignature, StringComparison.Ordinal))
         {
             return;
@@ -136,7 +137,6 @@ internal static class PrefabOwnerCatalog
             }
 
             ModPrefabOwners.Clear();
-            List<PluginResourceSnapshot> plugins = GetPluginResources();
             foreach (AssetBundle assetBundle in AssetBundle.GetAllLoadedAssetBundles())
             {
                 string bundleName = assetBundle.name ?? "";
@@ -268,29 +268,16 @@ internal static class PrefabOwnerCatalog
         return builder.ToString();
     }
 
-    private static string BuildSignature()
+    private static string BuildSignature(IEnumerable<PluginResourceSnapshot> plugins)
     {
         IEnumerable<string> bundleTokens = AssetBundle.GetAllLoadedAssetBundles()
             .Select(bundle => bundle.name ?? "")
             .Where(name => name.Length > 0)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
-        IEnumerable<string> pluginTokens = Chainloader.PluginInfos.Values
-            .Select(pluginInfo =>
-            {
-                string pluginName = pluginInfo.Metadata.Name ?? "";
-                string pluginGuid = pluginInfo.Metadata.GUID ?? "";
-                string assemblyName = "";
-                try
-                {
-                    assemblyName = pluginInfo.Instance?.GetType().Assembly.GetName().Name ?? "";
-                }
-                catch
-                {
-                    // Signature only needs stable ownership inputs.
-                }
-
-                return $"{pluginGuid}:{pluginName}:{assemblyName}";
-            })
+        IEnumerable<string> pluginTokens = plugins
+            .Select(plugin =>
+                $"{plugin.PluginGuid}:{plugin.PluginName}:{plugin.AssemblyName}:" +
+                string.Join(",", plugin.ResourceNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)))
             .OrderBy(token => token, StringComparer.OrdinalIgnoreCase);
 
         return string.Join("|", bundleTokens) + "||" + string.Join("|", pluginTokens);

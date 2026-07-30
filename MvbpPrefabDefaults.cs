@@ -357,11 +357,7 @@ internal static partial class MvbpPrefabDefaults
             return BuildCategories.HarnessProps;
         }
 
-        return seed.Category switch
-        {
-            "Misc" or "Crafting" => BuildCategories.HarnessProps,
-            _ => BuildCategories.HarnessProps
-        };
+        return BuildCategories.HarnessProps;
     }
 
     private static bool IsAdminOnlyCategory(string category)
