@@ -4,6 +4,9 @@ Scans vanilla Valheim and loaded prefab-adding mods for existing prefabs that ar
 
 It does not add new prefabs. It helps you harness the prefabs that are already there.
 
+![](https://i.ibb.co/21PTPBgw/equipmentswap.gif) <br>
+Swap equipment with the vanilla armor stand and the additional armor stands unlocked by HarnessPrefabs.
+
 ![](https://i.ibb.co/XxXky8Kb/Screenshot-2026-06-24-230139.png) <br>
 Dvergr barrel(enhanced lod) can be used as a fermenter. Fermenting time is configurable.
 
@@ -174,10 +177,13 @@ For prefabs with awkward or sparse colliders, HarnessPrefabs applies placement-o
 The `2 - Prefab Tweaks` config section contains optional synchronized tweaks:
 
 - `Trailership VikingShip Speed Ratio`: scales Trailership movement relative to VikingShip. Default is `0.66`; accepted range is `0.5` to `1.0`.
+- `Enable Armor Stand Equipment Swap`: on by default. Left or Right Alt+Use swaps the player's Helmet, Chest, Legs, Shoulder, and drawn or sheathed hand set with `ArmorStand`, `ArmorStand_Female`, or `ArmorStand_Male`; the game's `AltPlace`/Shift input no longer triggers the swap. A Utility item is included only when both sides of that Utility exchange are safe; displayable items such as `BeltStrength` can swap, while incompatible items such as `Wishbone` or a demister stay equipped or attached and the rest of the set still swaps. One-handed pairs and two-handed weapons are validated and moved as one hand-set transaction. A sheathed hand set remains sheathed after the swap; temporary states that mix drawn and hidden hand items must finish first. On the base `ArmorStand`, the shield and weapon back slots hold the hand set; on the female and male stands, the hand slots are used and their separate back-display slots are left unchanged. Female and male hand slots must already match the sides Valheim chooses when equipping the complete set; reversed display-only arrangements are not changed.
 - `Enable Bed Patches`: off by default. Adds bed/spawn behavior to supported MVBP-style bed prefabs.
 - `Fermenter Patch Duration Percent`: `0` disables the dvergrprops_barrel fermenter patch. `1` to `100` enables it and sets fermentation duration as a percentage of the vanilla fermenter.
 
 Bed and fermenter tweaks are intentionally marked unsafe because disabling the mod later can affect placed-world state such as spawn points or fermenting contents.
+
+Turn `Enable Armor Stand Equipment Swap` off when another mod, such as `ZenItemStands` or `Wardrobe`, should handle ArmorStand interaction instead. HarnessPrefabs does not automatically enable or disable this feature based on installed mods.
 
 ## Strengths
 

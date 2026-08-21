@@ -50,6 +50,7 @@ internal static class PrefabMvbpFixups
         {
             case "ArmorStand_Male":
             case "ArmorStand_Female":
+                RemoveMissingArmorStandEffects(prefab);
                 return AddSnapPoint(prefab, Vector3.zero, "Origin");
 
             case "TreasureChest_mountaincave":
@@ -477,6 +478,30 @@ internal static class PrefabMvbpFixups
         }
 
         return false;
+    }
+
+    private static void RemoveMissingArmorStandEffects(GameObject prefab)
+    {
+        ArmorStand armorStand = prefab.GetComponent<ArmorStand>();
+        if (!armorStand)
+        {
+            return;
+        }
+
+        RemoveMissingEffects(armorStand.m_effects);
+        RemoveMissingEffects(armorStand.m_destroyEffects);
+    }
+
+    private static void RemoveMissingEffects(EffectList effects)
+    {
+        if (effects?.m_effectPrefabs == null)
+        {
+            return;
+        }
+
+        effects.m_effectPrefabs = effects.m_effectPrefabs
+            .Where(effect => effect != null && effect.m_prefab)
+            .ToArray();
     }
 
     private static bool ApplyTrailershipFixup(GameObject prefab, bool applyStaticFixups)

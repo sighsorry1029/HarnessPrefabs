@@ -149,6 +149,7 @@
         <Compile Include="PrefabCategoryRegistry.cs"/>
         <Compile Include="PrefabClassifier.cs"/>
         <Compile Include="HarnessPrefabsRuntime.cs"/>
+        <Compile Include="HarnessPrefabsArmorStandSwap.cs"/>
         <Compile Include="PrefabLocalizationOverrideManager.cs"/>
         <Compile Include="HarnessPrefabsPlacedPiecePatches.cs"/>
         <Compile Include="HarnessPrefabsConsoleCommands.cs"/>

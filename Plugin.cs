@@ -13,14 +13,16 @@ namespace HarnessPrefabs;
 
 [BepInPlugin(ModGuid, ModName, ModVersion)]
 [BepInDependency(JotunnGuid, JotunnVersion)]
+[BepInIncompatibility(MoreVanillaBuildPrefabsGuid)]
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.3";
+    internal const string ModVersion = "1.0.4";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string JotunnGuid = "com.jotunn.jotunn";
     internal const string JotunnVersion = "2.29.1";
+    internal const string MoreVanillaBuildPrefabsGuid = "Searica.Valheim.MoreVanillaBuildPrefabs";
     private const double ReloadDebounceMilliseconds = 500d;
 
     private static readonly string ConfigFileName = $"{ModGuid}.cfg";
@@ -49,6 +51,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     internal static bool IsDebugMode => Player.m_debugMode;
     internal static bool HarnessHammerTabsEnabled => IsAdmin && IsDebugMode && (ShowHarnessPrefabTabs == null || ShowHarnessPrefabTabs.Value == Toggle.On);
     internal static bool UnsafeBedPatchesEnabled => EnableUnsafeBedPatches.Value == Toggle.On;
+    internal static bool ArmorStandEquipmentSwapEnabled => EnableArmorStandEquipmentSwap.Value == Toggle.On;
     internal static int FermenterPatchDurationPercent => Math.Min(100, Math.Max(0, UnsafeFermenterPatchDurationPercent.Value));
     internal static float TrailershipSpeedRatio => Mathf.Clamp(TrailershipVikingShipSpeedRatio == null ? 0.66f : TrailershipVikingShipSpeedRatio.Value, 0.5f, 1f);
 
@@ -63,6 +66,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     private static ConfigEntry<Toggle> ShowHarnessPrefabTabs = null!;
     private static ConfigEntry<float> TrailershipVikingShipSpeedRatio = null!;
     private static ConfigEntry<Toggle> EnableUnsafeBedPatches = null!;
+    private static ConfigEntry<Toggle> EnableArmorStandEquipmentSwap = null!;
     private static ConfigEntry<int> UnsafeFermenterPatchDurationPercent = null!;
 
     private void Awake()
@@ -87,6 +91,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                     new AcceptableValueRange<float>(0.5f, 1f)));
             TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
             EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
+            EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with ArmorStand, ArmorStand_Female, or ArmorStand_Male. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. A sheathed hand set remains sheathed after the swap. Turn this off when another mod handles ArmorStand interaction.");
             UnsafeFermenterPatchDurationPercent = BindSynced(
                 "2 - Prefab Tweaks",
                 "Fermenter Patch Duration Percent",
