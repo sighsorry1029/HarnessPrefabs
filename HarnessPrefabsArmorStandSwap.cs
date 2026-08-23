@@ -362,9 +362,37 @@ internal static class HarnessPrefabsArmorStandSwap
         bool originalSheathed = hasSheathedHandItem;
 
         string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(stand.gameObject.name);
-        bool usesBackSlots = string.Equals(prefabName, "ArmorStand", StringComparison.Ordinal);
-        VisSlot standLeftVisSlot = usesBackSlots ? VisSlot.BackLeft : VisSlot.HandLeft;
-        VisSlot standRightVisSlot = usesBackSlots ? VisSlot.BackRight : VisSlot.HandRight;
+        bool isBaseArmorStand = string.Equals(prefabName, "ArmorStand", StringComparison.Ordinal);
+        bool useBackSlots = isBaseArmorStand || originalSheathed;
+        bool incomingSheathed = originalSheathed;
+
+        if (!isBaseArmorStand && !hasActiveHandItem && !hasSheathedHandItem)
+        {
+            if (!TryFindUniqueSlot(stand, VisSlot.HandLeft, out int handLeftIndex, out _) ||
+                !TryFindUniqueSlot(stand, VisSlot.HandRight, out int handRightIndex, out _) ||
+                !TryFindUniqueSlot(stand, VisSlot.BackLeft, out int backLeftIndex, out _) ||
+                !TryFindUniqueSlot(stand, VisSlot.BackRight, out int backRightIndex, out _))
+            {
+                error = "This armor stand does not have unique hand and back hand-set slots.";
+                return false;
+            }
+
+            bool handSlotsOccupied = !string.IsNullOrEmpty(zdo.GetString(handLeftIndex + "_item", "")) ||
+                                     !string.IsNullOrEmpty(zdo.GetString(handRightIndex + "_item", ""));
+            bool backSlotsOccupied = !string.IsNullOrEmpty(zdo.GetString(backLeftIndex + "_item", "")) ||
+                                     !string.IsNullOrEmpty(zdo.GetString(backRightIndex + "_item", ""));
+            if (handSlotsOccupied && backSlotsOccupied)
+            {
+                error = "This armor stand has hand sets in both its hand and back slots. Draw or sheathe a hand item to choose which set to swap.";
+                return false;
+            }
+
+            useBackSlots = backSlotsOccupied;
+            incomingSheathed = useBackSlots;
+        }
+
+        VisSlot standLeftVisSlot = useBackSlots ? VisSlot.BackLeft : VisSlot.HandLeft;
+        VisSlot standRightVisSlot = useBackSlots ? VisSlot.BackRight : VisSlot.HandRight;
 
         if (!TryFindUniqueSlot(stand, standLeftVisSlot, out int standLeftIndex, out ArmorStand.ArmorStandSlot standLeftSlot) ||
             !TryFindUniqueSlot(stand, standRightVisSlot, out int standRightIndex, out ArmorStand.ArmorStandSlot standRightSlot))
@@ -392,7 +420,7 @@ internal static class HarnessPrefabsArmorStandSwap
 
         ItemDrop.ItemData? standLeftOutgoing;
         ItemDrop.ItemData? standRightOutgoing;
-        if (usesBackSlots)
+        if (isBaseArmorStand)
         {
             if (!TryMapHandsToStandSlots(
                     stand,
@@ -414,7 +442,7 @@ internal static class HarnessPrefabsArmorStandSwap
             if (!CanStoreHandItem(stand, standLeftSlot, standLeftOutgoing) ||
                 !CanStoreHandItem(stand, standRightSlot, standRightOutgoing))
             {
-                error = "The player's hand set cannot be displayed in this armor stand's hand slots.";
+                error = "The player's hand set cannot be displayed in this armor stand's selected hand-set slots.";
                 return false;
             }
         }
@@ -447,15 +475,15 @@ internal static class HarnessPrefabsArmorStandSwap
                 out ItemDrop.ItemData? incomingLeft,
                 out ItemDrop.ItemData? incomingRight))
         {
-            error = "The armor stand's hand slots do not form a hand set that can be equipped together.";
+            error = "The armor stand's selected hand-set slots do not form a hand set that can be equipped together.";
             return false;
         }
 
-        if (!usesBackSlots &&
+        if (!isBaseArmorStand &&
             (!ReferenceEquals(incomingLeft, incomingFromStandLeft) ||
              !ReferenceEquals(incomingRight, incomingFromStandRight)))
         {
-            error = "The armor stand's left and right hand items are not in wearable hand positions.";
+            error = "The armor stand's selected left and right items are not in wearable hand positions.";
             return false;
         }
 
@@ -480,7 +508,13 @@ internal static class HarnessPrefabsArmorStandSwap
 
         slots.Add(standLeftPlan);
         slots.Add(standRightPlan);
-        handSet = new HandSetPlan(originalLeft, originalRight, incomingLeft, incomingRight, originalSheathed);
+        handSet = new HandSetPlan(
+            originalLeft,
+            originalRight,
+            incomingLeft,
+            incomingRight,
+            originalSheathed,
+            incomingSheathed);
         error = "";
         return true;
     }
@@ -634,7 +668,7 @@ internal static class HarnessPrefabsArmorStandSwap
                     plan.Player,
                     plan.HandSet.IncomingLeft,
                     plan.HandSet.IncomingRight,
-                    plan.HandSet.OriginalSheathed,
+                    plan.HandSet.IncomingSheathed,
                     out string handError))
             {
                 throw new InvalidOperationException(handError);
@@ -1948,13 +1982,15 @@ internal static class HarnessPrefabsArmorStandSwap
             ItemDrop.ItemData? originalRight,
             ItemDrop.ItemData? incomingLeft,
             ItemDrop.ItemData? incomingRight,
-            bool originalSheathed)
+            bool originalSheathed,
+            bool incomingSheathed)
         {
             OriginalLeft = originalLeft;
             OriginalRight = originalRight;
             IncomingLeft = incomingLeft;
             IncomingRight = incomingRight;
             OriginalSheathed = originalSheathed;
+            IncomingSheathed = incomingSheathed;
         }
 
         internal ItemDrop.ItemData? OriginalLeft { get; }
@@ -1966,6 +2002,8 @@ internal static class HarnessPrefabsArmorStandSwap
         internal ItemDrop.ItemData? IncomingRight { get; }
 
         internal bool OriginalSheathed { get; }
+
+        internal bool IncomingSheathed { get; }
     }
 }
 

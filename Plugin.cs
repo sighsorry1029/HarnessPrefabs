@@ -17,7 +17,7 @@ namespace HarnessPrefabs;
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.4";
+    internal const string ModVersion = "1.0.5";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string JotunnGuid = "com.jotunn.jotunn";
@@ -91,7 +91,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                     new AcceptableValueRange<float>(0.5f, 1f)));
             TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
             EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
-            EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with ArmorStand, ArmorStand_Female, or ArmorStand_Male. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. A sheathed hand set remains sheathed after the swap. Turn this off when another mod handles ArmorStand interaction.");
+            EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with ArmorStand, ArmorStand_Female, or ArmorStand_Male. Female and male stands use their hand slots for drawn equipment and back slots for sheathed equipment. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. Turn this off when another mod handles ArmorStand interaction.");
             UnsafeFermenterPatchDurationPercent = BindSynced(
                 "2 - Prefab Tweaks",
                 "Fermenter Patch Duration Percent",
