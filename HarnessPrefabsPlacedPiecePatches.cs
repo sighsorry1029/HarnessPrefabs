@@ -11,6 +11,7 @@ namespace HarnessPrefabs;
 internal static class HarnessPrefabsPlacedPiecePatches
 {
     private static readonly Dictionary<string, Piece.Requirement[]> DefaultResources = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> MaterializedPrefabNames = new(StringComparer.Ordinal);
     private static readonly int PieceLayer = LayerMask.NameToLayer("piece");
     private static readonly int CharacterTriggerLayer = LayerMask.NameToLayer("character_trigger");
     private const float FermenterLodSize = 6.7675858f;
@@ -30,28 +31,57 @@ internal static class HarnessPrefabsPlacedPiecePatches
     private const string ZdoDoorCanNotBeClosed = "Door.m_canNotBeClosed";
     private const string ZdoDoorCheckGuardStone = "Door.m_checkGuardStone";
 
-    public static void RegisterDefaultResources(GameObject prefab, Piece.Requirement[] resources)
+    internal static void RegisterMaterializedPrefab(GameObject prefab, Piece.Requirement[] resources)
     {
         string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(prefab ? prefab.name : "");
-        if (prefabName.Length == 0 || DefaultResources.ContainsKey(prefabName))
+        if (prefabName.Length == 0)
         {
             return;
         }
 
-        DefaultResources[prefabName] = CloneRequirements(resources);
+        MaterializedPrefabNames.Add(prefabName);
+        if (!DefaultResources.ContainsKey(prefabName))
+        {
+            DefaultResources[prefabName] = CloneRequirements(resources);
+        }
+    }
+
+    internal static bool IsMaterializedPrefab(string prefabName)
+    {
+        string normalizedName = HarnessPrefabsRuntime.NormalizePrefabName(prefabName);
+        return normalizedName.Length > 0 && MaterializedPrefabNames.Contains(normalizedName);
+    }
+
+    internal static bool WasMaterializedPrefab(string prefabName)
+    {
+        string normalizedName = HarnessPrefabsRuntime.NormalizePrefabName(prefabName);
+        return normalizedName.Length > 0 && DefaultResources.ContainsKey(normalizedName);
+    }
+
+    internal static void ResetMaterializedPrefabNames()
+    {
+        MaterializedPrefabNames.Clear();
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(Piece), nameof(Piece.SetCreator))]
-    private static void PieceSetCreatorPrefix(Piece __instance)
+    private static void PieceSetCreatorPrefix(Piece __instance, long uid, out bool __state)
     {
-        if (!HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _))
+        __state = false;
+        if (!__instance ||
+            uid == 0L ||
+            !HarnessPrefabsRuntime.IsMaterializedPrefab(__instance) ||
+            !__instance.m_nview ||
+            !__instance.m_nview.IsValid() ||
+            !__instance.m_nview.IsOwner() ||
+            __instance.GetCreator() != 0L)
         {
             return;
         }
 
-        ZNetView zNetView = __instance.GetComponent<ZNetView>();
-        if (zNetView && !zNetView.m_persistent)
+        __state = true;
+        ZNetView zNetView = __instance.m_nview;
+        if (!zNetView.m_persistent)
         {
             zNetView.m_persistent = true;
             ZSyncTransform syncTransform = __instance.gameObject.GetComponent<ZSyncTransform>();
@@ -63,19 +93,28 @@ internal static class HarnessPrefabsPlacedPiecePatches
             syncTransform.m_syncPosition = true;
             syncTransform.m_syncRotation = true;
         }
+
+        ZDO zdo = zNetView.GetZDO();
+        if (zdo != null)
+        {
+            zdo.Persistent = true;
+        }
     }
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Piece), nameof(Piece.SetCreator))]
-    private static void PieceSetCreatorPostfix(Piece __instance)
+    private static void PieceSetCreatorPostfix(Piece __instance, bool __state)
     {
-        if (!__instance || !__instance.IsPlacedByPlayer() || !HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _))
+        if (!__state ||
+            !__instance ||
+            !__instance.IsPlacedByPlayer() ||
+            !HarnessPrefabsRuntime.TryGetRuntimeRule(__instance, out PrefabRule rule))
         {
             return;
         }
 
         ClearPlacedContainerInventory(__instance);
-        ApplyRuntimePatches(__instance);
+        ApplyRuntimePatches(__instance, rule);
     }
 
     [HarmonyPostfix]
@@ -83,12 +122,14 @@ internal static class HarnessPrefabsPlacedPiecePatches
     [HarmonyPatch(typeof(Piece), nameof(Piece.Awake))]
     private static void PieceAwakePostfix(Piece __instance)
     {
-        if (!__instance || !__instance.IsPlacedByPlayer() || !HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _))
+        if (!__instance ||
+            !__instance.IsPlacedByPlayer() ||
+            !HarnessPrefabsRuntime.TryGetRuntimeRule(__instance, out PrefabRule rule))
         {
             return;
         }
 
-        ApplyRuntimePatches(__instance);
+        ApplyRuntimePatches(__instance, rule);
     }
 
     [HarmonyPrefix]
@@ -98,7 +139,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         out (bool Changed, EffectList Original) __state)
     {
         __state = (false, null);
-        if (!HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _) || HarnessPrefabsSfxManager.HasSfx(__instance.m_destroyedEffect))
+        if (!HarnessPrefabsRuntime.WasMaterializedPrefab(__instance) || HarnessPrefabsSfxManager.HasSfx(__instance.m_destroyedEffect))
         {
             return;
         }
@@ -129,7 +170,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         out (bool Changed, Piece.Requirement[] Original) __state)
     {
         __state = (false, null);
-        if (!__instance || !HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _))
+        if (!__instance || !HarnessPrefabsRuntime.WasMaterializedPrefab(__instance))
         {
             return;
         }
@@ -203,8 +244,9 @@ internal static class HarnessPrefabsPlacedPiecePatches
         __instance.m_animator.Update(0f);
     }
 
-    private static void ApplyRuntimePatches(Piece piece)
+    private static void ApplyRuntimePatches(Piece piece, PrefabRule rule)
     {
+        piece.m_canBeRemoved = rule.CanBeRemoved;
         string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(piece.name);
         ApplyContainerPatches(piece, prefabName);
         ApplyTimedDestructionPatch(piece);

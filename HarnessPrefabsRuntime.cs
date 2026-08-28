@@ -7,20 +7,29 @@ namespace HarnessPrefabs;
 
 internal static class HarnessPrefabsRuntime
 {
-    public static bool TryGetManagedRule(GameObject gameObject, out PrefabRule rule)
+    public static bool IsMaterializedPrefab(Component component)
+    {
+        return TryGetPiecePrefabName(component, out string prefabName) &&
+               HarnessPrefabsPlacedPiecePatches.IsMaterializedPrefab(prefabName);
+    }
+
+    public static bool WasMaterializedPrefab(Component component)
+    {
+        return TryGetPiecePrefabName(component, out string prefabName) &&
+               HarnessPrefabsPlacedPiecePatches.WasMaterializedPrefab(prefabName);
+    }
+
+    public static bool TryGetRuntimeRule(Component component, out PrefabRule rule)
     {
         rule = null;
-        if (!gameObject)
+        if (!TryGetPiecePrefabName(component, out string prefabName) ||
+            !PrefabRuleStore.TryGetRule(prefabName, out rule))
         {
             return false;
         }
 
-        return TryGetManagedRule(gameObject.name, out rule);
-    }
-
-    public static bool TryGetManagedRule(Component component, out PrefabRule rule)
-    {
-        return TryGetManagedRule(component ? component.gameObject : null, out rule);
+        return rule.Access == PrefabAccess.Admin ||
+               HarnessPrefabsPlacedPiecePatches.WasMaterializedPrefab(prefabName);
     }
 
     public static bool TryGetKnownManagedPlacedPiece(Component component, out Piece piece)
@@ -31,20 +40,20 @@ internal static class HarnessPrefabsRuntime
             return false;
         }
 
-        string normalizedName = NormalizePrefabName(piece.gameObject.name);
-        return normalizedName.Length > 0 && PrefabRuleStore.TryGetRule(normalizedName, out _);
+        return TryGetRuntimeRule(piece, out _);
     }
 
-    public static bool TryGetManagedRule(string prefabName, out PrefabRule rule)
+    private static bool TryGetPiecePrefabName(Component component, out string prefabName)
     {
-        rule = null;
-        string normalizedName = NormalizePrefabName(prefabName);
-        if (normalizedName.Length == 0)
+        prefabName = "";
+        if (!component)
         {
             return false;
         }
 
-        return PrefabRuleStore.TryGetRule(normalizedName, out rule) && rule.Access != PrefabAccess.Hidden;
+        Piece piece = component.GetComponentInParent<Piece>();
+        prefabName = NormalizePrefabName(piece ? piece.gameObject.name : "");
+        return prefabName.Length > 0;
     }
 
     public static string NormalizePrefabName(string name)

@@ -22,6 +22,23 @@ internal static class PrefabBuildManager
     private static bool? _lastHarnessHammerTabsEnabled;
     private static bool _hasCompletedFullRefresh;
     private static string _lastFullRefreshSignature = "";
+    private static ZNetScene _materializationScene;
+
+    public static void BeginPrefabEpoch(ZNetScene scene)
+    {
+        if (!scene || ReferenceEquals(_materializationScene, scene))
+        {
+            return;
+        }
+
+        RemoveAddedPieces(ObjectDB.instance ? GetHammerPieceTable() : null);
+        PrefabPlacementPatchRegistry.Clear();
+        HarnessPrefabsPlacedPiecePatches.ResetMaterializedPrefabNames();
+        _lastHarnessHammerTabsEnabled = null;
+        _hasCompletedFullRefresh = false;
+        _lastFullRefreshSignature = "";
+        _materializationScene = scene;
+    }
 
     public static void MarkJotunnPiecesRegistered()
     {
@@ -124,7 +141,7 @@ internal static class PrefabBuildManager
             return;
         }
 
-        if (!PrefabRuleStore.HasCachedDiscoveries)
+        if (!_hasCompletedFullRefresh || !PrefabRuleStore.HasCachedDiscoveries)
         {
             Refresh($"{reason}; full discovery fallback");
             return;
@@ -234,6 +251,7 @@ internal static class PrefabBuildManager
                 discovery.Name,
                 MvbpPrefabDefaults.NeedsPlacementPatch(discovery.Name),
                 MvbpCompatibilityDefaults.GetPlacementOffset(discovery.Name));
+
             if (!discovery.Prefab)
             {
                 continue;
@@ -323,7 +341,10 @@ internal static class PrefabBuildManager
         if (!piece)
         {
             piece = prefab.AddComponent<Piece>();
+            piece.m_canBeRemoved = false;
         }
+
+        HarnessPrefabsPlacedPiecePatches.RegisterMaterializedPrefab(prefab, piece.m_resources);
 
         piece.m_enabled = true;
         piece.m_name = string.IsNullOrWhiteSpace(rule.DisplayName) ? prefab.name : rule.DisplayName;
@@ -344,11 +365,8 @@ internal static class PrefabBuildManager
         piece.m_clipEverything = rule.ClipEverything;
         piece.m_clipGround = rule.ClipGround;
         piece.m_repairPiece = false;
-        piece.m_canBeRemoved = rule.CanBeRemoved;
         piece.m_craftingStation = craftingStation;
-        HarnessPrefabsPlacedPiecePatches.RegisterDefaultResources(prefab, piece.m_resources);
         piece.m_resources = resources;
-        ApplyPrefabContainerDefaults(prefab);
         PrefabMvbpFixups.Apply(prefab);
         HarnessPrefabsSfxManager.FixPlacementSfx(piece);
 
@@ -360,26 +378,6 @@ internal static class PrefabBuildManager
         PrefabIconRenderer.QueueIcon(piece);
 
         return piece;
-    }
-
-    private static void ApplyPrefabContainerDefaults(GameObject prefab)
-    {
-        string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(prefab ? prefab.name : "");
-        if (!MvbpCompatibilityDefaults.TryGetContainerSize(prefabName, out int width, out int height))
-        {
-            return;
-        }
-
-        foreach (Container container in prefab.GetComponentsInChildren<Container>(true))
-        {
-            if (!container)
-            {
-                continue;
-            }
-
-            container.m_width = width;
-            container.m_height = height;
-        }
     }
 
     private static void ApplyPrefabPlacementProfile(GameObject prefab, Piece piece)

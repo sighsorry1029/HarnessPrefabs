@@ -39,7 +39,7 @@ internal static class HarnessPrefabsArmorStandSwap
         }
 
         ArmorStand candidate = switchInstance.GetComponentInParent<ArmorStand>();
-        if (!candidate || !IsSupportedPrefab(candidate))
+        if (!candidate || !IsSupportedPlayerBuiltPrefab(candidate))
         {
             return false;
         }
@@ -94,7 +94,7 @@ internal static class HarnessPrefabsArmorStandSwap
         try
         {
             if (!IsPlayerReady(player) ||
-                !IsSupportedPrefab(stand) ||
+                !IsSupportedPlayerBuiltPrefab(stand) ||
                 !PrivateArea.CheckAccess(stand.transform.position, 0f, flash: true))
             {
                 ShowMessage(player, "You cannot use this armor stand right now.");
@@ -165,7 +165,7 @@ internal static class HarnessPrefabsArmorStandSwap
             return false;
         }
 
-        if (!IsSupportedPrefab(stand) || !PrivateArea.CheckAccess(stand.transform.position, 0f, flash: false))
+        if (!IsSupportedPlayerBuiltPrefab(stand) || !PrivateArea.CheckAccess(stand.transform.position, 0f, flash: false))
         {
             error = "You do not have access to this armor stand.";
             return false;
@@ -997,7 +997,7 @@ internal static class HarnessPrefabsArmorStandSwap
 
     private static void EnsureTransactionStillValid(SwapPlan plan, bool checkRevision)
     {
-        if (!plan.Stand || !plan.Nview || !plan.Nview.IsValid() || !plan.Nview.IsOwner() ||
+        if (!IsSupportedPlayerBuiltPrefab(plan.Stand) || !plan.Nview || !plan.Nview.IsValid() || !plan.Nview.IsOwner() ||
             plan.Nview.GetZDO() != plan.Zdo || plan.Zdo.m_uid != plan.ZdoId)
         {
             throw new InvalidOperationException("Armor stand ownership or identity changed during the swap.");
@@ -1587,9 +1587,15 @@ internal static class HarnessPrefabsArmorStandSwap
                (!player.IsSwimming() || player.IsOnGround());
     }
 
-    private static bool IsSupportedPrefab(ArmorStand stand)
+    private static bool IsSupportedPlayerBuiltPrefab(ArmorStand stand)
     {
-        return stand && SupportedPrefabNames.Contains(HarnessPrefabsRuntime.NormalizePrefabName(stand.gameObject.name));
+        if (!stand || !SupportedPrefabNames.Contains(HarnessPrefabsRuntime.NormalizePrefabName(stand.gameObject.name)))
+        {
+            return false;
+        }
+
+        Piece piece = stand.GetComponentInParent<Piece>();
+        return piece && piece.IsPlacedByPlayer();
     }
 
     private static ZNetView GetNetView(ArmorStand stand)

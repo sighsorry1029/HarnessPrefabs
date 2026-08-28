@@ -6,8 +6,9 @@ namespace HarnessPrefabs;
 [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Awake))]
 internal static class ZNetSceneAwakePatch
 {
-    private static void Postfix()
+    private static void Postfix(ZNetScene __instance)
     {
+        PrefabBuildManager.BeginPrefabEpoch(__instance);
         PrefabBuildManager.Refresh("ZNetScene.Awake");
     }
 }

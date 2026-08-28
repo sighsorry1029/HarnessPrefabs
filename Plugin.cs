@@ -91,7 +91,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                     new AcceptableValueRange<float>(0.5f, 1f)));
             TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
             EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
-            EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with ArmorStand, ArmorStand_Female, or ArmorStand_Male. Female and male stands use their hand slots for drawn equipment and back slots for sheathed equipment. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. Turn this off when another mod handles ArmorStand interaction.");
+            EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with player-built ArmorStand, ArmorStand_Female, or ArmorStand_Male. Female and male stands use their hand slots for drawn equipment and back slots for sheathed equipment. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. Turn this off when another mod handles ArmorStand interaction.");
             UnsafeFermenterPatchDurationPercent = BindSynced(
                 "2 - Prefab Tweaks",
                 "Fermenter Patch Duration Percent",
