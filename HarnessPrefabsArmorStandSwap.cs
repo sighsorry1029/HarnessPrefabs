@@ -363,36 +363,9 @@ internal static class HarnessPrefabsArmorStandSwap
 
         string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(stand.gameObject.name);
         bool isBaseArmorStand = string.Equals(prefabName, "ArmorStand", StringComparison.Ordinal);
-        bool useBackSlots = isBaseArmorStand || originalSheathed;
-        bool incomingSheathed = originalSheathed;
 
-        if (!isBaseArmorStand && !hasActiveHandItem && !hasSheathedHandItem)
-        {
-            if (!TryFindUniqueSlot(stand, VisSlot.HandLeft, out int handLeftIndex, out _) ||
-                !TryFindUniqueSlot(stand, VisSlot.HandRight, out int handRightIndex, out _) ||
-                !TryFindUniqueSlot(stand, VisSlot.BackLeft, out int backLeftIndex, out _) ||
-                !TryFindUniqueSlot(stand, VisSlot.BackRight, out int backRightIndex, out _))
-            {
-                error = "This armor stand does not have unique hand and back hand-set slots.";
-                return false;
-            }
-
-            bool handSlotsOccupied = !string.IsNullOrEmpty(zdo.GetString(handLeftIndex + "_item", "")) ||
-                                     !string.IsNullOrEmpty(zdo.GetString(handRightIndex + "_item", ""));
-            bool backSlotsOccupied = !string.IsNullOrEmpty(zdo.GetString(backLeftIndex + "_item", "")) ||
-                                     !string.IsNullOrEmpty(zdo.GetString(backRightIndex + "_item", ""));
-            if (handSlotsOccupied && backSlotsOccupied)
-            {
-                error = "This armor stand has hand sets in both its hand and back slots. Draw or sheathe a hand item to choose which set to swap.";
-                return false;
-            }
-
-            useBackSlots = backSlotsOccupied;
-            incomingSheathed = useBackSlots;
-        }
-
-        VisSlot standLeftVisSlot = useBackSlots ? VisSlot.BackLeft : VisSlot.HandLeft;
-        VisSlot standRightVisSlot = useBackSlots ? VisSlot.BackRight : VisSlot.HandRight;
+        VisSlot standLeftVisSlot = isBaseArmorStand ? VisSlot.BackLeft : VisSlot.HandLeft;
+        VisSlot standRightVisSlot = isBaseArmorStand ? VisSlot.BackRight : VisSlot.HandRight;
 
         if (!TryFindUniqueSlot(stand, standLeftVisSlot, out int standLeftIndex, out ArmorStand.ArmorStandSlot standLeftSlot) ||
             !TryFindUniqueSlot(stand, standRightVisSlot, out int standRightIndex, out ArmorStand.ArmorStandSlot standRightSlot))
@@ -420,31 +393,19 @@ internal static class HarnessPrefabsArmorStandSwap
 
         ItemDrop.ItemData? standLeftOutgoing;
         ItemDrop.ItemData? standRightOutgoing;
-        if (isBaseArmorStand)
+        if (!TryMapHandsToStandSlots(
+                stand,
+                standLeftSlot,
+                standRightSlot,
+                originalLeft,
+                originalRight,
+                out standLeftOutgoing,
+                out standRightOutgoing))
         {
-            if (!TryMapHandsToStandSlots(
-                    stand,
-                    standLeftSlot,
-                    standRightSlot,
-                    originalLeft,
-                    originalRight,
-                    out standLeftOutgoing,
-                    out standRightOutgoing))
-            {
-                error = "The player's hand set cannot fit the base armor stand's shield and weapon slots.";
-                return false;
-            }
-        }
-        else
-        {
-            standLeftOutgoing = originalLeft;
-            standRightOutgoing = originalRight;
-            if (!CanStoreHandItem(stand, standLeftSlot, standLeftOutgoing) ||
-                !CanStoreHandItem(stand, standRightSlot, standRightOutgoing))
-            {
-                error = "The player's hand set cannot be displayed in this armor stand's selected hand-set slots.";
-                return false;
-            }
+            error = isBaseArmorStand
+                ? "The player's hand set cannot fit the base armor stand's shield and weapon slots."
+                : "The player's hand set cannot be displayed in this armor stand's hand slots.";
+            return false;
         }
 
         if (!TryLoadStandHandItem(
@@ -480,10 +441,18 @@ internal static class HarnessPrefabsArmorStandSwap
         }
 
         if (!isBaseArmorStand &&
-            (!ReferenceEquals(incomingLeft, incomingFromStandLeft) ||
-             !ReferenceEquals(incomingRight, incomingFromStandRight)))
+            (!TryMapHandsToStandSlots(
+                 stand,
+                 standLeftSlot,
+                 standRightSlot,
+                 incomingLeft,
+                 incomingRight,
+                 out ItemDrop.ItemData? mappedStandLeft,
+                 out ItemDrop.ItemData? mappedStandRight) ||
+             !ReferenceEquals(mappedStandLeft, incomingFromStandLeft) ||
+             !ReferenceEquals(mappedStandRight, incomingFromStandRight)))
         {
-            error = "The armor stand's selected left and right items are not in wearable hand positions.";
+            error = "The armor stand's hand items are not in their attachment-compatible wearable positions.";
             return false;
         }
 
@@ -514,7 +483,7 @@ internal static class HarnessPrefabsArmorStandSwap
             incomingLeft,
             incomingRight,
             originalSheathed,
-            incomingSheathed);
+            originalSheathed);
         error = "";
         return true;
     }
