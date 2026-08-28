@@ -245,7 +245,7 @@ internal static partial class MvbpPrefabDefaults
         ["dverger_demister_ruins"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "", false, false, false, null, null, "Misc"),
         ["dverger_guardstone"] = new MvbpPrefabDefault(true, false, "Misc", "BlackForge", "YggdrasilWood:5;BlackMarble:5;BlackCore:1", false, false, false, null, null, "None"),
         ["dvergrprops_banner"] = new MvbpPrefabDefault(true, false, "Furniture", "Workbench", "JuteBlue:6;FineWood:2", false, false, false, null, null, "Banner"),
-        ["dvergrprops_barrel"] = new MvbpPrefabDefault(true, false, "Furniture", "Workbench", "YggdrasilWood:20;Bronze:5;Resin:10", false, false, false, null, null, "Dvergr"),
+        ["dvergrprops_barrel"] = new MvbpPrefabDefault(true, false, "Crafting", "Workbench", "YggdrasilWood:20;Bronze:5;Resin:10", false, false, false, null, null, "Dvergr"),
         ["dvergrprops_bed"] = new MvbpPrefabDefault(true, false, "Furniture", "BlackForge", "YggdrasilWood:8;ScaleHide:2;IronNails:5", false, false, false, null, null, "Bed"),
         ["dvergrprops_chair"] = new MvbpPrefabDefault(true, false, "Furniture", "BlackForge", "YggdrasilWood:4", false, false, false, null, null, "Chair"),
         ["dvergrprops_crate"] = new MvbpPrefabDefault(true, false, "Misc", "BlackForge", "YggdrasilWood:4", false, false, false, null, null, "Misc"),

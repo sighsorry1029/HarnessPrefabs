@@ -134,11 +134,6 @@ internal static class HarnessPrefabsSfxManager
 
             if (!prefab)
             {
-                if (HarnessPrefabsPlugin.Verbose)
-                {
-                    HarnessPrefabsPlugin.Log.LogWarning($"SFX prefab '{name}' could not be found.");
-                }
-
                 continue;
             }
 

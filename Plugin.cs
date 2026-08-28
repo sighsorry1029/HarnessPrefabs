@@ -17,7 +17,7 @@ namespace HarnessPrefabs;
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.6";
+    internal const string ModVersion = "1.0.7";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string JotunnGuid = "com.jotunn.jotunn";
@@ -47,7 +47,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     internal static ManualLogSource Log { get; private set; } = null!;
     internal static bool IsAdmin => SyncedConfig.IsAdmin;
     internal static bool IsSourceOfTruth => SyncedConfig.IsSourceOfTruth;
-    internal static bool Verbose => VerboseLogging.Value == Toggle.On;
     internal static bool IsDebugMode => Player.m_debugMode;
     internal static bool HarnessHammerTabsEnabled => IsAdmin && IsDebugMode && (ShowHarnessPrefabTabs == null || ShowHarnessPrefabTabs.Value == Toggle.On);
     internal static bool UnsafeBedPatchesEnabled => EnableUnsafeBedPatches.Value == Toggle.On;
@@ -62,7 +61,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     }
 
     private static ConfigEntry<Toggle> LockConfiguration = null!;
-    private static ConfigEntry<Toggle> VerboseLogging = null!;
     private static ConfigEntry<Toggle> ShowHarnessPrefabTabs = null!;
     private static ConfigEntry<float> TrailershipVikingShipSpeedRatio = null!;
     private static ConfigEntry<Toggle> EnableUnsafeBedPatches = null!;
@@ -79,7 +77,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         try
         {
             LockConfiguration = BindSynced("1 - General", "Lock Configuration", Toggle.On, "If on, prefab policy is controlled by the server and can only be changed by admins.");
-            VerboseLogging = BindSynced("1 - General", "Verbose Logging", Toggle.Off, "If on, writes detailed prefab discovery and hammer registration logs.", synchronizedSetting: false);
             ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, Harness Hammer tabs are visible to admin clients while Valheim debugmode is enabled. If off, Harness tabs stay hidden even in debugmode.", synchronizedSetting: false);
             ShowHarnessPrefabTabs.SettingChanged += (_, _) => PrefabBuildManager.RefreshIfHarnessHammerVisibilityChanged();
             TrailershipVikingShipSpeedRatio = BindSynced(
@@ -90,14 +87,14 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                     "Controls Trailership movement speed relative to VikingShip. 0.5 is half speed, 1.0 matches VikingShip.",
                     new AcceptableValueRange<float>(0.5f, 1f)));
             TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
-            EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.Off, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
+            EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.On, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
             EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with player-built ArmorStand, ArmorStand_Female, or ArmorStand_Male. The base stand uses its back slots; female and male stands always use their hand slots and leave their back slots unchanged. The player's drawn or sheathed hand state is preserved. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. Turn this off when another mod handles ArmorStand interaction.");
             UnsafeFermenterPatchDurationPercent = BindSynced(
                 "2 - Prefab Tweaks",
                 "Fermenter Patch Duration Percent",
-                0,
+                70,
                 new ConfigDescription(
-                    "0 disables the player-built dvergrprops_barrel fermenter patch. 1-100 enables the patch and sets fermentation time as a percentage of the vanilla fermenter duration. 70 matches the old MVBP behavior. Unsafe: disabling the mod later can affect fermenting contents.",
+                    "0 disables the player-built dvergrprops_barrel fermenter patch. 1-100 enables the patch and sets fermentation time as a percentage of the vanilla fermenter duration. Default: 70. Unsafe: disabling the mod later can affect fermenting contents.",
                     new AcceptableValueRange<int>(0, 100)));
             _ = SyncedConfig.AddLockingConfigEntry(LockConfiguration);
 

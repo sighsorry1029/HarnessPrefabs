@@ -80,8 +80,7 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
         _processing = true;
         yield return new WaitForEndOfFrame();
 
-        int rendered = 0;
-        int failed = 0;
+        int processed = 0;
         while (_queue.Count > 0)
         {
             Piece piece = _queue.Dequeue();
@@ -101,14 +100,10 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
                     RenderedPrefabNames.Add(prefab.name);
                 }
 
-                rendered++;
-            }
-            else
-            {
-                failed++;
             }
 
-            if ((rendered + failed) % 4 == 0)
+            processed++;
+            if (processed % 4 == 0)
             {
                 yield return null;
             }
@@ -117,10 +112,6 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
         _queued.Clear();
         _queuedPrefabNames.Clear();
         _processing = false;
-        if (HarnessPrefabsPlugin.Verbose && (rendered > 0 || failed > 0))
-        {
-            HarnessPrefabsPlugin.Log.LogInfo($"Icon render queue complete: rendered={rendered}, failed={failed}.");
-        }
     }
 
     private static Sprite TryRenderWithJotunn(GameObject prefab)
@@ -145,13 +136,8 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
 
             return sprite;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            if (HarnessPrefabsPlugin.Verbose)
-            {
-                HarnessPrefabsPlugin.Log.LogWarning($"Jotunn icon render failed for {prefab.name}: {ex.Message}");
-            }
-
             return null;
         }
     }

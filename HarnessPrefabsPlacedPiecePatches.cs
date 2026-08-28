@@ -281,10 +281,6 @@ internal static class HarnessPrefabsPlacedPiecePatches
 
         inventory.RemoveAll();
         container.Save();
-        if (HarnessPrefabsPlugin.Verbose)
-        {
-            HarnessPrefabsPlugin.Log.LogInfo($"Cleared default container inventory for placed prefab '{HarnessPrefabsRuntime.NormalizePrefabName(piece.name)}'.");
-        }
     }
 
     private static void ApplyContainerPatches(Piece piece, string prefabName)

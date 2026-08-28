@@ -67,11 +67,6 @@ internal static class PrefabPlacementPatchRegistry
         collider.isTrigger = false;
 
         ghost.AddComponent<HarnessPrefabsPlacementPatchMarker>();
-
-        if (HarnessPrefabsPlugin.Verbose)
-        {
-            HarnessPrefabsPlugin.Log.LogInfo($"Applied placement collider patch to ghost '{prefabName}'.");
-        }
     }
 
     public static void ApplyGhostOffset(GameObject ghost)

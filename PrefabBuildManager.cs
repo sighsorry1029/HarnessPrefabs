@@ -109,7 +109,7 @@ internal static class PrefabBuildManager
             afterDiscover = total.ElapsedMilliseconds;
             PrefabRuleStore.LoadRulesForCurrentAuthority(discoveries);
             afterRules = total.ElapsedMilliseconds;
-            ApplyActiveRulesToHammer(hammer, discoveries, reason);
+            ApplyActiveRulesToHammer(hammer, discoveries);
             _lastFullRefreshSignature = fullRefreshSignature;
             _hasCompletedFullRefresh = true;
         }
@@ -167,7 +167,7 @@ internal static class PrefabBuildManager
         Stopwatch total = Stopwatch.StartNew();
         try
         {
-            ApplyActiveRulesToHammer(hammer, PrefabRuleStore.LastDiscoveries, reason);
+            ApplyActiveRulesToHammer(hammer, PrefabRuleStore.LastDiscoveries);
         }
         catch (Exception ex)
         {
@@ -213,16 +213,12 @@ internal static class PrefabBuildManager
         }
     }
 
-    private static void ApplyActiveRulesToHammer(PieceTable hammer, IReadOnlyCollection<PrefabDiscovery> discoveries, string reason)
+    private static void ApplyActiveRulesToHammer(PieceTable hammer, IReadOnlyCollection<PrefabDiscovery> discoveries)
     {
         _lastHarnessHammerTabsEnabled = HarnessPrefabsPlugin.HarnessHammerTabsEnabled;
         RemoveAddedPieces(hammer);
         RemoveAdminCategoryTabs(hammer);
         PrefabPlacementPatchRegistry.Clear();
-
-        int publicCount = 0;
-        int adminCount = 0;
-        int hiddenCount = 0;
 
         foreach (PrefabDiscovery discovery in PrefabSortPolicy.SortForHammer(discoveries))
         {
@@ -231,20 +227,10 @@ internal static class PrefabBuildManager
                 continue;
             }
 
-            switch (rule.Access)
+            if (rule.Access == PrefabAccess.Hidden ||
+                rule.Access == PrefabAccess.Admin && !HarnessPrefabsPlugin.HarnessHammerTabsEnabled)
             {
-                case PrefabAccess.Hidden:
-                    hiddenCount++;
-                    continue;
-                case PrefabAccess.Admin when !HarnessPrefabsPlugin.HarnessHammerTabsEnabled:
-                    adminCount++;
-                    continue;
-                case PrefabAccess.Admin:
-                    adminCount++;
-                    break;
-                case PrefabAccess.Public:
-                    publicCount++;
-                    break;
+                continue;
             }
 
             PrefabPlacementPatchRegistry.Set(
@@ -280,11 +266,6 @@ internal static class PrefabBuildManager
         if (Player.m_localPlayer)
         {
             Player.m_localPlayer.UpdateAvailablePiecesList();
-        }
-
-        if (HarnessPrefabsPlugin.Verbose)
-        {
-            HarnessPrefabsPlugin.Log.LogInfo($"Refresh complete ({reason}). public={publicCount}, admin={adminCount}, hidden={hiddenCount}, visibleAdded={AddedPrefabs.Count}, isAdmin={HarnessPrefabsPlugin.IsAdmin}, debugMode={HarnessPrefabsPlugin.IsDebugMode}");
         }
     }
 
@@ -609,8 +590,6 @@ internal static class PrefabBuildManager
 
     private static IEnumerable<GameObject> CollectSeededSoftReferencePrefabs(HashSet<string> seen)
     {
-        int loadedCount = 0;
-        int missingCount = 0;
         foreach (string prefabName in MvbpPrefabDefaults.Names)
         {
             if (seen.Contains(prefabName))
@@ -621,7 +600,6 @@ internal static class PrefabBuildManager
             GameObject prefab = TryResolveSeededSoftReferencePrefab(prefabName);
             if (!prefab || string.IsNullOrWhiteSpace(prefab.name))
             {
-                missingCount++;
                 continue;
             }
 
@@ -630,13 +608,7 @@ internal static class PrefabBuildManager
                 continue;
             }
 
-            loadedCount++;
             yield return prefab;
-        }
-
-        if (HarnessPrefabsPlugin.Verbose && (loadedCount > 0 || missingCount > 0))
-        {
-            HarnessPrefabsPlugin.Log.LogInfo($"Loaded {loadedCount} MVBP-seeded prefabs from SoftRef fallback. missing={missingCount}");
         }
     }
 
@@ -646,13 +618,8 @@ internal static class PrefabBuildManager
         {
             return PrefabManager.Cache.GetPrefab<GameObject>(prefabName);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            if (HarnessPrefabsPlugin.Verbose)
-            {
-                HarnessPrefabsPlugin.Log.LogWarning($"SoftRef fallback failed for '{prefabName}': {ex.Message}");
-            }
-
             return null;
         }
     }
@@ -732,7 +699,7 @@ internal static class PrefabBuildManager
         int existingBuildableCount,
         int discoveryCount)
     {
-        if (!HarnessPrefabsPlugin.Verbose && totalMs < 1000)
+        if (totalMs < 1000)
         {
             return;
         }
@@ -743,7 +710,7 @@ internal static class PrefabBuildManager
 
     private static void LogCachedRefreshProfile(string reason, long totalMs, int discoveryCount)
     {
-        if (!HarnessPrefabsPlugin.Verbose && totalMs < 1000)
+        if (totalMs < 1000)
         {
             return;
         }
