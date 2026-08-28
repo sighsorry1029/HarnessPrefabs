@@ -69,7 +69,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
     [HarmonyPatch(typeof(Piece), nameof(Piece.SetCreator))]
     private static void PieceSetCreatorPostfix(Piece __instance)
     {
-        if (!HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _))
+        if (!__instance || !__instance.IsPlacedByPlayer() || !HarnessPrefabsRuntime.TryGetManagedRule(__instance, out _))
         {
             return;
         }

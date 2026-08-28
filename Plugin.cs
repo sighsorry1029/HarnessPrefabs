@@ -17,7 +17,7 @@ namespace HarnessPrefabs;
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.5";
+    internal const string ModVersion = "1.0.6";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string JotunnGuid = "com.jotunn.jotunn";
@@ -97,7 +97,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                 "Fermenter Patch Duration Percent",
                 0,
                 new ConfigDescription(
-                    "0 disables the dvergrprops_barrel fermenter patch. 1-100 enables the patch and sets fermentation time as a percentage of the vanilla fermenter duration. 70 matches the old MVBP behavior. Unsafe: disabling the mod later can affect fermenting contents.",
+                    "0 disables the player-built dvergrprops_barrel fermenter patch. 1-100 enables the patch and sets fermentation time as a percentage of the vanilla fermenter duration. 70 matches the old MVBP behavior. Unsafe: disabling the mod later can affect fermenting contents.",
                     new AcceptableValueRange<int>(0, 100)));
             _ = SyncedConfig.AddLockingConfigEntry(LockConfiguration);
 
