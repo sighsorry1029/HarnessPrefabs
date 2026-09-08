@@ -479,13 +479,12 @@ internal static class HarnessPrefabsPlacedPiecePatches
         bool activeSelf = gameObject.activeSelf;
         try
         {
-            GameObject addButton = CloneFermenterChild(addButtonSource, gameObject.transform);
-            GameObject tapButton = CloneFermenterChild(tapButtonSource, gameObject.transform);
-            GameObject roofCheckPoint = CloneFermenterChild(roofCheckPointSource, gameObject.transform);
-            GameObject output = CloneFermenterChild(outputSource, gameObject.transform);
-            GameObject ready = CloneFermenterChild(readySource, gameObject.transform);
-            GameObject fermenting = CloneFermenterChild(fermentingSource, gameObject.transform);
-            addedObjects.AddRange(new[] { addButton, tapButton, roofCheckPoint, output, ready, fermenting });
+            GameObject addButton = CloneFermenterChild(addButtonSource, gameObject.transform, addedObjects);
+            GameObject tapButton = CloneFermenterChild(tapButtonSource, gameObject.transform, addedObjects);
+            GameObject roofCheckPoint = CloneFermenterChild(roofCheckPointSource, gameObject.transform, addedObjects);
+            GameObject output = CloneFermenterChild(outputSource, gameObject.transform, addedObjects);
+            GameObject ready = CloneFermenterChild(readySource, gameObject.transform, addedObjects);
+            GameObject fermenting = CloneFermenterChild(fermentingSource, gameObject.transform, addedObjects);
 
             addButton.transform.localScale = Vector3.one;
             addButton.transform.localPosition = new Vector3(0f, 0.75f, 0f);
@@ -499,8 +498,8 @@ internal static class HarnessPrefabsPlacedPiecePatches
             if (!top)
             {
                 GameObject topObject = new("_top");
-                topObject.transform.SetParent(gameObject.transform, worldPositionStays: false);
                 addedObjects.Add(topObject);
+                topObject.transform.SetParent(gameObject.transform, worldPositionStays: false);
                 top = topObject.transform;
             }
 
@@ -593,7 +592,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         }
     }
 
-    private static GameObject CloneFermenterChild(Transform source, Transform targetParent)
+    private static GameObject CloneFermenterChild(Transform source, Transform targetParent, List<GameObject> addedObjects)
     {
         bool activeSelf = source.gameObject.activeSelf;
         GameObject clone;
@@ -601,6 +600,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         {
             source.gameObject.SetActive(false);
             clone = UnityEngine.Object.Instantiate(source.gameObject);
+            addedObjects.Add(clone);
         }
         finally
         {

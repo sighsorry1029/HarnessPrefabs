@@ -215,7 +215,7 @@ internal static class PrefabClassifier
             access = PrefabAccess.Admin;
             category = BuildCategories.HarnessStructures;
         }
-        else if (components.Contains("Piece") || components.Contains("WearNTear") || components.Contains("Door"))
+        else if (components.Contains("Piece") || components.Contains("WearNTear"))
         {
             access = PrefabAccess.Public;
             category = GuessPublicCategory(name, components);
@@ -402,12 +402,7 @@ internal static class PrefabClassifier
     private static string GuessPublicCategory(string name, IReadOnlyCollection<string> components)
     {
         string lower = name.ToLowerInvariant();
-        if (components.Contains("CraftingStation") || components.Contains("StationExtension"))
-        {
-            return BuildCategories.Crafting;
-        }
-
-        if (components.Contains("Chair") || components.Contains("ArmorStand") || lower.Contains("chair") || lower.Contains("bench") || lower.Contains("table") || lower.Contains("rug") || lower.Contains("banner") || lower.Contains("curtain"))
+        if (components.Contains("Chair") || lower.Contains("chair") || lower.Contains("bench") || lower.Contains("table") || lower.Contains("rug") || lower.Contains("banner") || lower.Contains("curtain"))
         {
             return BuildCategories.Furniture;
         }
@@ -417,7 +412,7 @@ internal static class PrefabClassifier
             return BuildCategories.Stonecutter;
         }
 
-        if (components.Contains("WearNTear") || components.Contains("Door") || lower.Contains("wood") || lower.Contains("wall") || lower.Contains("floor") || lower.Contains("roof") || lower.Contains("beam") || lower.Contains("stair"))
+        if (components.Contains("WearNTear") || lower.Contains("wood") || lower.Contains("wall") || lower.Contains("floor") || lower.Contains("roof") || lower.Contains("beam") || lower.Contains("stair"))
         {
             return BuildCategories.Building;
         }

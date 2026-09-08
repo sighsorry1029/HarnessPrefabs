@@ -17,7 +17,7 @@ namespace HarnessPrefabs;
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.7";
+    internal const string ModVersion = "1.0.8";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string JotunnGuid = "com.jotunn.jotunn";
@@ -42,6 +42,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     private ReloadTimer? _configReloadTimer;
     private ReloadTimer? _rulesReloadTimer;
     private string? _lastConfigFileText;
+    private bool _reloadingConfig;
     private static bool _sourceOfTruthFileModeReady;
 
     internal static ManualLogSource Log { get; private set; } = null!;
@@ -78,7 +79,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         {
             LockConfiguration = BindSynced("1 - General", "Lock Configuration", Toggle.On, "If on, prefab policy is controlled by the server and can only be changed by admins.");
             ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, Harness Hammer tabs are visible to admin clients while Valheim debugmode is enabled. If off, Harness tabs stay hidden even in debugmode.", synchronizedSetting: false);
-            ShowHarnessPrefabTabs.SettingChanged += (_, _) => PrefabBuildManager.RefreshIfHarnessHammerVisibilityChanged();
+            ShowHarnessPrefabTabs.SettingChanged += OnHarnessHammerVisibilityChanged;
             TrailershipVikingShipSpeedRatio = BindSynced(
                 "2 - Prefab Tweaks",
                 "Trailership VikingShip Speed Ratio",
@@ -86,7 +87,7 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                 new ConfigDescription(
                     "Controls Trailership movement speed relative to VikingShip. 0.5 is half speed, 1.0 matches VikingShip.",
                     new AcceptableValueRange<float>(0.5f, 1f)));
-            TrailershipVikingShipSpeedRatio.SettingChanged += (_, _) => PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
+            TrailershipVikingShipSpeedRatio.SettingChanged += OnTrailershipSpeedRatioChanged;
             EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.On, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
             EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with player-built ArmorStand, ArmorStand_Female, or ArmorStand_Male. The base stand uses its back slots; female and male stands always use their hand slots and leave their back slots unchanged. The player's drawn or sheathed hand state is preserved. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. Turn this off when another mod handles ArmorStand interaction.");
             UnsafeFermenterPatchDurationPercent = BindSynced(
@@ -121,11 +122,27 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
-        SaveConfig(reload: false);
+        try
+        {
+            SaveConfig(reload: false);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError($"Error saving configuration during shutdown: {ex.Message}");
+        }
+
         _configWatcher?.Dispose();
         _rulesWatcher?.Dispose();
         _configReloadTimer?.Dispose();
         _rulesReloadTimer?.Dispose();
+        if (ShowHarnessPrefabTabs != null)
+        {
+            ShowHarnessPrefabTabs.SettingChanged -= OnHarnessHammerVisibilityChanged;
+        }
+        if (TrailershipVikingShipSpeedRatio != null)
+        {
+            TrailershipVikingShipSpeedRatio.SettingChanged -= OnTrailershipSpeedRatioChanged;
+        }
         PrefabLocalizationOverrideManager.Dispose();
         SyncedRules.ValueChanged -= OnSyncedRulesChanged;
         SyncedConfig.SourceOfTruthChanged -= OnSourceOfTruthChanged;
@@ -135,6 +152,22 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
             Instance = null;
         }
         _harmony.UnpatchSelf();
+    }
+
+    private void OnHarnessHammerVisibilityChanged(object sender, EventArgs e)
+    {
+        if (!_reloadingConfig)
+        {
+            PrefabBuildManager.RefreshIfHarnessHammerVisibilityChanged();
+        }
+    }
+
+    private void OnTrailershipSpeedRatioChanged(object sender, EventArgs e)
+    {
+        if (!_reloadingConfig)
+        {
+            PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
+        }
     }
 
     private static void OnSyncedRulesChanged()
@@ -262,9 +295,18 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
                     return;
                 }
 
-                SaveConfig(reload: true);
-                _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
-                PrefabBuildManager.Refresh("config file reloaded");
+                _reloadingConfig = true;
+                try
+                {
+                    SaveConfig(reload: true);
+                    _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
+                }
+                finally
+                {
+                    // Reload can change entries before it fails; apply the resulting values once.
+                    _reloadingConfig = false;
+                    PrefabBuildManager.Refresh("config file reload");
+                }
             }
             catch (Exception ex)
             {

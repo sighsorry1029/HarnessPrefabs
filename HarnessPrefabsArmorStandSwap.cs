@@ -482,7 +482,6 @@ internal static class HarnessPrefabsArmorStandSwap
             originalRight,
             incomingLeft,
             incomingRight,
-            originalSheathed,
             originalSheathed);
         error = "";
         return true;
@@ -579,7 +578,7 @@ internal static class HarnessPrefabsArmorStandSwap
 
         try
         {
-            EnsureTransactionStillValid(plan, checkRevision: true);
+            EnsureTransactionStillValid(plan);
 
             foreach (SlotPlan slot in plan.Slots)
             {
@@ -637,13 +636,13 @@ internal static class HarnessPrefabsArmorStandSwap
                     plan.Player,
                     plan.HandSet.IncomingLeft,
                     plan.HandSet.IncomingRight,
-                    plan.HandSet.IncomingSheathed,
+                    plan.HandSet.Sheathed,
                     out string handError))
             {
                 throw new InvalidOperationException(handError);
             }
 
-            EnsureTransactionStillValid(plan, checkRevision: true);
+            EnsureTransactionStillValid(plan);
 
             foreach (SlotPlan slot in plan.Slots)
             {
@@ -964,7 +963,7 @@ internal static class HarnessPrefabsArmorStandSwap
         return succeeded;
     }
 
-    private static void EnsureTransactionStillValid(SwapPlan plan, bool checkRevision)
+    private static void EnsureTransactionStillValid(SwapPlan plan)
     {
         if (!IsSupportedPlayerBuiltPrefab(plan.Stand) || !plan.Nview || !plan.Nview.IsValid() || !plan.Nview.IsOwner() ||
             plan.Nview.GetZDO() != plan.Zdo || plan.Zdo.m_uid != plan.ZdoId)
@@ -972,7 +971,7 @@ internal static class HarnessPrefabsArmorStandSwap
             throw new InvalidOperationException("Armor stand ownership or identity changed during the swap.");
         }
 
-        if (checkRevision && plan.Zdo.DataRevision != plan.InitialRevision)
+        if (plan.Zdo.DataRevision != plan.InitialRevision)
         {
             throw new InvalidOperationException("Armor stand contents changed during the swap.");
         }
@@ -1684,7 +1683,7 @@ internal static class HarnessPrefabsArmorStandSwap
     private static bool TryRestoreOriginalHandState(SwapPlan plan, out string error)
     {
         HandSetPlan hands = plan.HandSet;
-        if (HandStateMatches(plan.Player, hands.OriginalLeft, hands.OriginalRight, hands.OriginalSheathed))
+        if (HandStateMatches(plan.Player, hands.OriginalLeft, hands.OriginalRight, hands.Sheathed))
         {
             error = "";
             return true;
@@ -1713,7 +1712,7 @@ internal static class HarnessPrefabsArmorStandSwap
             plan.Player,
             hands.OriginalLeft,
             hands.OriginalRight,
-            hands.OriginalSheathed,
+            hands.Sheathed,
             out error);
     }
 
@@ -1957,15 +1956,13 @@ internal static class HarnessPrefabsArmorStandSwap
             ItemDrop.ItemData? originalRight,
             ItemDrop.ItemData? incomingLeft,
             ItemDrop.ItemData? incomingRight,
-            bool originalSheathed,
-            bool incomingSheathed)
+            bool sheathed)
         {
             OriginalLeft = originalLeft;
             OriginalRight = originalRight;
             IncomingLeft = incomingLeft;
             IncomingRight = incomingRight;
-            OriginalSheathed = originalSheathed;
-            IncomingSheathed = incomingSheathed;
+            Sheathed = sheathed;
         }
 
         internal ItemDrop.ItemData? OriginalLeft { get; }
@@ -1976,9 +1973,7 @@ internal static class HarnessPrefabsArmorStandSwap
 
         internal ItemDrop.ItemData? IncomingRight { get; }
 
-        internal bool OriginalSheathed { get; }
-
-        internal bool IncomingSheathed { get; }
+        internal bool Sheathed { get; }
     }
 }
 

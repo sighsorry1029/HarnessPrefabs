@@ -203,6 +203,12 @@ Turn `Enable Armor Stand Equipment Swap` off when another mod, such as `ZenItemS
 5. Use Harness categories for admin-only review/build pieces.
 6. Run `harnessprefabs:full` only when you need display names, descriptions, flags, or component metadata for deeper review.
 
+## Maintaining Prefab Defaults
+
+`MvbpPrefabDefaults.generated.cs` is a curated snapshot originally imported from MoreVanillaBuildPrefabs; its header records the source path. No generator is tracked in this repository. The table also contains reviewed HarnessPrefabs changes, including the `dvergrprops_barrel` Crafting category, which must survive future imports.
+
+Before regenerating or replacing the table, record the upstream source and revision, preserve existing manual changes, and compare prefab keys, effective access, categories, requirements, and placement/removal flags against the current snapshot. Review intentional differences explicitly; retain the source provenance and the handwritten conversion rules in `MvbpPrefabDefaults.cs`.
+
 ## Github
 Original code from
 https://github.com/searica/MoreVanillaBuildPrefabs <br>

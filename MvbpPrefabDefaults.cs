@@ -352,11 +352,6 @@ internal static partial class MvbpPrefabDefaults
             return BuildCategories.HarnessStructures;
         }
 
-        if (IsPropGroup(seed.PieceGroup) || seed.Category == "CreatorShop" || seed.Category == "Furniture")
-        {
-            return BuildCategories.HarnessProps;
-        }
-
         return BuildCategories.HarnessProps;
     }
 
@@ -378,11 +373,6 @@ internal static partial class MvbpPrefabDefaults
     private static bool IsStructureGroup(string group)
     {
         return group is "BlackMarble" or "Dvergr" or "Goblin" or "Ice" or "Iron" or "Stone" or "Wood";
-    }
-
-    private static bool IsPropGroup(string group)
-    {
-        return group is "Banner" or "Chair" or "Misc" or "Rug" or "Statue" or "Table" or "Treasure";
     }
 
     private static bool IsStructureStation(string station)
