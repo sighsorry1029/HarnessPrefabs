@@ -218,8 +218,10 @@ internal static class PrefabClassifier
         }
         else if (components.Contains("Piece") || components.Contains("WearNTear"))
         {
-            access = PrefabAccess.Public;
-            category = GuessPublicCategory(name, components);
+            access = PrefabAccess.Admin;
+            category = GuessPublicCategory(name, components) == BuildCategories.Furniture
+                ? BuildCategories.HarnessProps
+                : BuildCategories.HarnessStructures;
         }
         else if (IsDestructibleOnly(components))
         {

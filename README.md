@@ -4,6 +4,8 @@ Scans vanilla Valheim and loaded prefab-adding mods for existing prefabs that ar
 
 It does not add new prefabs. It helps you harness the prefabs that are already there.
 
+Targets Valheim 1.0.7 with BepInExPack Valheim 5.4.2350. Jotunn is no longer required by HarnessPrefabs; keep it installed if other mods require it.
+
 ![](https://i.ibb.co/21PTPBgw/equipmentswap.gif) <br>
 Swap equipment with the vanilla armor stand and the additional armor stands unlocked by HarnessPrefabs.
 
@@ -33,9 +35,11 @@ HarnessPrefabs builds a safe review workflow around hidden prefabs:
 
 This makes it useful both as a MoreVanillaBuildPrefabs replacement for curated public pieces and as an admin review tool for larger modpacks.
 
-## Hammer Tabs
+## Hammer Categories
 
-Public tabs use existing Valheim categories where possible:
+In Valheim 1.0.7, admin-only prefabs appear in a top-level **HarnessPrefabs** section beside Categories, Materials, Recent, and Favorites. The section appears only for an administrator with Valheim `debugmode` enabled. Its prefabs do not enter the native lists, so they cannot leak through Categories, Materials, Recent, or Favorites. The `Show Harness Tabs` configuration key keeps its existing name and can hide the section.
+
+Public groups retain the existing YAML category names:
 
 - `Misc`
 - `Crafting`
@@ -43,17 +47,17 @@ Public tabs use existing Valheim categories where possible:
 - `BuildingStonecutter`
 - `Furniture`
 
-Admin-only tabs are added only for admin clients while Valheim `debugmode` is enabled:
+The HarnessPrefabs section contains three admin-only groups:
 
 - `Harness Nature`
 - `Harness Structures`
 - `Harness Props`
 
-The client-side `Show Harness Tabs` config can hide Harness admin tabs even while debugmode is on.
+The client-side `Show Harness Tabs` config can hide the entire HarnessPrefabs section even while debugmode is on.
 
 ## Default Classification
 
-Known MVBP public pieces default to public access. Known MVBP admin-style nature and prop pieces default to Harness admin tabs.
+Known MVBP public pieces default to public access. Other discovered prefabs default to the Harness Nature, Structures, or Props admin groups unless an explicit YAML policy assigns a public category.
 
 General classification uses prefab components and names:
 
@@ -165,7 +169,7 @@ English is applied first as fallback, then the client's selected language is lay
 
 ## Icons And Placement
 
-HarnessPrefabs uses Jotunn RenderManager to generate missing Hammer icons. The render path follows the MVBP-style isometric snapshot setup and handles known special cases such as `PickableItem` random item previews.
+HarnessPrefabs reuses authored icons and generates missing Hammer icons with its own queued isometric renderer. Gameplay components are removed from inactive preview clones before rendering. The renderer handles `PickableItem` random item previews, skips headless servers, and releases its own textures and temporary render objects when leaving the world.
 
 For prefabs with awkward or sparse colliders, HarnessPrefabs applies placement-only ghost helpers based on reviewed MVBP defaults. These helpers affect Hammer preview placement without adding extra helper colliders to the final placed object.
 
@@ -186,11 +190,11 @@ Turn `Enable Armor Stand Equipment Swap` off when another mod, such as `ZenItemS
 ## Strengths
 
 - Curated defaults with local control: MVBP knowledge is used as a starting point, but YAML remains the final policy.
-- Admin review without player clutter: Harness tabs exist only for admins in debugmode and can be hidden client-side.
+- Admin review without player clutter: the HarnessPrefabs section exists only for admins in debugmode and can be hidden client-side.
 - Server-authoritative policy: active overrides and localization can be synchronized to clients.
 - Modpack friendly discovery: prefabs are grouped by owner where possible, making large reference files easier to review.
 - Safer Hammer scope: runtime effects, creatures, item drops, and spawner/controller objects stay outside the build table.
-- Focused compatibility: Jotunn handles category integration and icon rendering instead of private UI hacks.
+- Focused compatibility: integrates existing policy groups with Valheim's build menu and uses original game references with explicit cached access to the required private members.
 
 ## Suggested Workflow
 

@@ -3,8 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Jotunn.Configs;
-using Jotunn.Managers;
 using UnityEngine;
 using EffectData = EffectList.EffectData;
 
@@ -26,6 +24,13 @@ internal static class HarnessPrefabsSfxManager
     };
 
     private static bool _initialized;
+
+    public static void Reset()
+    {
+        _initialized = false;
+        foreach (string name in PlacementSfx.Keys.ToArray()) PlacementSfx[name] = null;
+        foreach (string name in RemovalSfx.Keys.ToArray()) RemovalSfx[name] = null;
+    }
 
     public static void Initialize()
     {
@@ -95,7 +100,7 @@ internal static class HarnessPrefabsSfxManager
             .Select(CloneEffectData)
             .ToList();
 
-        string sfxName = station && station.name == CraftingStations.Stonecutter ? "sfx_rock_destroyed" : "sfx_wood_destroyed";
+        string sfxName = station && station.name == "piece_stonecutter" ? "sfx_rock_destroyed" : "sfx_wood_destroyed";
         if (RemovalSfx.TryGetValue(sfxName, out EffectData sfx) && sfx != null)
         {
             effects.Add(CloneEffectData(sfx));
@@ -109,24 +114,24 @@ internal static class HarnessPrefabsSfxManager
 
     private static string ResolvePlacementSfxName(CraftingStation station)
     {
-        if (!station || string.IsNullOrEmpty(station.m_name) || station.name == CraftingStations.Workbench || station.name == CraftingStations.BlackForge)
+        if (!station || string.IsNullOrEmpty(station.m_name) || station.name == "piece_workbench" || station.name == "blackforge")
         {
             return "sfx_build_hammer_default";
         }
 
-        if (station.name == CraftingStations.Stonecutter)
+        if (station.name == "piece_stonecutter")
         {
             return "sfx_build_hammer_stone";
         }
 
-        return station.name == CraftingStations.Forge ? "sfx_build_hammer_metal" : "sfx_build_hammer_default";
+        return station.name == "forge" ? "sfx_build_hammer_metal" : "sfx_build_hammer_default";
     }
 
     private static void InitializeSfx(Dictionary<string, EffectData> sfxDict)
     {
         foreach (string name in sfxDict.Keys.ToList())
         {
-            GameObject prefab = PrefabManager.Instance.GetPrefab(name);
+            GameObject prefab = PrefabAssetResolver.Find(name);
             if (!prefab && ZNetScene.instance)
             {
                 prefab = ZNetScene.instance.GetPrefab(name);

@@ -13,6 +13,8 @@ namespace HarnessPrefabs;
 
 internal static class PrefabLocalizationOverrideManager
 {
+    private static readonly AccessTools.FieldRef<Localization, Dictionary<string, string>> LocalizationTranslations = AccessTools.FieldRefAccess<Localization, Dictionary<string, string>>("m_translations");
+
     private const string DomainName = "localization";
     private const string DefaultLanguageFileName = "English.yml";
     private const string SyncedPayloadKey = "localization-yaml";
@@ -395,12 +397,12 @@ internal static class PrefabLocalizationOverrideManager
         Dictionary<string, string?> originalTranslations = GetOriginalTranslations(language);
         if (!originalTranslations.ContainsKey(token))
         {
-            originalTranslations[token] = localization.m_translations.TryGetValue(token, out string? originalText)
+            originalTranslations[token] = LocalizationTranslations(localization).TryGetValue(token, out string? originalText)
                 ? originalText
                 : null;
         }
 
-        localization.m_translations[token] = text;
+        LocalizationTranslations(localization)[token] = text;
     }
 
     private static void RestoreRemovedTranslations(Localization localization, string language, IEnumerable<string> currentTokens)
@@ -421,11 +423,11 @@ internal static class PrefabLocalizationOverrideManager
 
             if (originalText == null)
             {
-                localization.m_translations.Remove(token);
+                LocalizationTranslations(localization).Remove(token);
             }
             else
             {
-                localization.m_translations[token] = originalText;
+                LocalizationTranslations(localization)[token] = originalText;
             }
 
             originalTranslations.Remove(token);

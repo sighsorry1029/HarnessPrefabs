@@ -4,7 +4,6 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
-using Jotunn.Managers;
 using ServerSync;
 using UnityEngine;
 using ReloadTimer = System.Timers.Timer;
@@ -12,16 +11,13 @@ using ReloadTimer = System.Timers.Timer;
 namespace HarnessPrefabs;
 
 [BepInPlugin(ModGuid, ModName, ModVersion)]
-[BepInDependency(JotunnGuid, JotunnVersion)]
 [BepInIncompatibility(MoreVanillaBuildPrefabsGuid)]
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.0.8";
+    internal const string ModVersion = "1.1.1";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
-    internal const string JotunnGuid = "com.jotunn.jotunn";
-    internal const string JotunnVersion = "2.29.1";
     internal const string MoreVanillaBuildPrefabsGuid = "Searica.Valheim.MoreVanillaBuildPrefabs";
     private const double ReloadDebounceMilliseconds = 500d;
 
@@ -70,13 +66,14 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     {
         Log = Logger;
         Instance = this;
+        PrefabAssetResolver.Prepare();
 
         bool saveOnSet = Config.SaveOnConfigSet;
         Config.SaveOnConfigSet = false;
         try
         {
             LockConfiguration = BindSynced("1 - General", "Lock Configuration", Toggle.On, "If on, prefab policy is controlled by the server and can only be changed by admins.");
-            ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, Harness Hammer tabs are visible to admin clients while Valheim debugmode is enabled. If off, Harness tabs stay hidden even in debugmode.", synchronizedSetting: false);
+            ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, the HarnessPrefabs Hammer section is visible to admin clients while Valheim debugmode is enabled. If off, the section stays hidden even in debugmode.", synchronizedSetting: false);
             ShowHarnessPrefabTabs.SettingChanged += OnHarnessHammerVisibilityChanged;
             EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.On, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
             EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with player-built ArmorStand, ArmorStand_Female, or ArmorStand_Male. The base stand uses its back slots; female and male stands always use their hand slots and leave their back slots unchanged. The player's drawn or sheathed hand state is preserved. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. Turn this off when another mod handles ArmorStand interaction.");
@@ -94,7 +91,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
             HarnessPrefabsConsoleCommands.Register();
             SyncedRules.ValueChanged += OnSyncedRulesChanged;
             SyncedConfig.SourceOfTruthChanged += OnSourceOfTruthChanged;
-            PieceManager.OnPiecesRegistered += OnJotunnPiecesRegistered;
 
             _harmony.PatchAll(typeof(HarnessPrefabsPlugin).Assembly);
             SetupConfigWatcher();
@@ -130,9 +126,10 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
             ShowHarnessPrefabTabs.SettingChanged -= OnHarnessHammerVisibilityChanged;
         }
         PrefabLocalizationOverrideManager.Dispose();
+        PrefabCategoryRegistry.Dispose();
+        PrefabBuildManager.EndPrefabEpoch(ZNetScene.instance);
         SyncedRules.ValueChanged -= OnSyncedRulesChanged;
         SyncedConfig.SourceOfTruthChanged -= OnSourceOfTruthChanged;
-        PieceManager.OnPiecesRegistered -= OnJotunnPiecesRegistered;
         if (ReferenceEquals(Instance, this))
         {
             Instance = null;
@@ -175,12 +172,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         }
 
         PrefabBuildManager.Refresh("config authority changed");
-    }
-
-    private static void OnJotunnPiecesRegistered()
-    {
-        PrefabBuildManager.MarkJotunnPiecesRegistered();
-        PrefabBuildManager.Refresh("Jotunn.OnPiecesRegistered");
     }
 
     internal static void EnsureSourceOfTruthFileMode()

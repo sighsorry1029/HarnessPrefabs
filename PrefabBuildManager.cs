@@ -5,8 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using Jotunn.Configs;
-using Jotunn.Managers;
+using HarmonyLib;
 using UnityEngine;
 using Object = UnityEngine.Object;
 using Requirement = Piece.Requirement;
@@ -16,8 +15,8 @@ namespace HarnessPrefabs;
 internal static class PrefabBuildManager
 {
     private static readonly HashSet<GameObject> AddedPrefabs = new();
-    private static readonly HashSet<string> AddedAdminPieceNames = new(StringComparer.Ordinal);
-    private static bool _jotunnPiecesRegistered;
+    private static readonly AccessTools.FieldRef<ZNetScene, Dictionary<int, GameObject>> NamedPrefabs = AccessTools.FieldRefAccess<ZNetScene, Dictionary<int, GameObject>>("m_namedPrefabs");
+    private static readonly Action<Player> UpdateAvailablePieces = AccessTools.MethodDelegate<Action<Player>>(AccessTools.Method(typeof(Player), "UpdateAvailablePiecesList"));
     private static bool _refreshing;
     private static bool? _lastHarnessHammerTabsEnabled;
     private static bool _hasCompletedFullRefresh;
@@ -40,9 +39,18 @@ internal static class PrefabBuildManager
         _materializationScene = scene;
     }
 
-    public static void MarkJotunnPiecesRegistered()
+    public static void EndPrefabEpoch(ZNetScene scene)
     {
-        _jotunnPiecesRegistered = true;
+        if (!ReferenceEquals(_materializationScene, scene)) return;
+        RemoveAddedPieces(ObjectDB.instance ? GetHammerPieceTable() : null);
+        PrefabCategoryRegistry.Clear();
+        PrefabPlacementPatchRegistry.Clear();
+        PrefabIconRenderer.Release();
+        PrefabAssetResolver.Release();
+        HarnessPrefabsSfxManager.Reset();
+        _materializationScene = null;
+        _hasCompletedFullRefresh = false;
+        _lastHarnessHammerTabsEnabled = null;
     }
 
     public static void RefreshIfHarnessHammerVisibilityChanged()
@@ -65,11 +73,6 @@ internal static class PrefabBuildManager
         }
 
         if (!ZNetScene.instance || !ObjectDB.instance)
-        {
-            return;
-        }
-
-        if (!_jotunnPiecesRegistered)
         {
             return;
         }
@@ -110,7 +113,7 @@ internal static class PrefabBuildManager
             PrefabRuleStore.LoadRulesForCurrentAuthority(discoveries);
             afterRules = total.ElapsedMilliseconds;
             ApplyActiveRulesToHammer(hammer, discoveries);
-            _lastFullRefreshSignature = fullRefreshSignature;
+            _lastFullRefreshSignature = BuildFullRefreshSignature(hammer);
             _hasCompletedFullRefresh = true;
         }
         catch (Exception ex)
@@ -152,11 +155,6 @@ internal static class PrefabBuildManager
             return;
         }
 
-        if (!_jotunnPiecesRegistered)
-        {
-            return;
-        }
-
         PieceTable hammer = GetHammerPieceTable();
         if (!hammer)
         {
@@ -191,33 +189,22 @@ internal static class PrefabBuildManager
         if (!IsHammerPieceTable(table))
         {
             RemoveAddedPiecesFromTable(table);
-            RemoveAdminCategoryTabs(table);
-            PrefabCategoryRegistry.EnsureGrown(table);
             return;
         }
 
-        PrefabCategoryRegistry.EnsureGrown(table);
-        if (!HarnessPrefabsPlugin.HarnessHammerTabsEnabled)
-        {
-            RemoveAdminCategoryTabs(table);
-        }
 
         if (knownRecipes == null)
         {
             return;
         }
 
-        foreach (string pieceName in AddedAdminPieceNames)
-        {
-            knownRecipes.Add(pieceName);
-        }
     }
 
     private static void ApplyActiveRulesToHammer(PieceTable hammer, IReadOnlyCollection<PrefabDiscovery> discoveries)
     {
         _lastHarnessHammerTabsEnabled = HarnessPrefabsPlugin.HarnessHammerTabsEnabled;
         RemoveAddedPieces(hammer);
-        RemoveAdminCategoryTabs(hammer);
+        PrefabCategoryRegistry.Clear();
         PrefabPlacementPatchRegistry.Clear();
 
         foreach (PrefabDiscovery discovery in PrefabSortPolicy.SortForHammer(discoveries))
@@ -227,8 +214,7 @@ internal static class PrefabBuildManager
                 continue;
             }
 
-            if (rule.Access == PrefabAccess.Hidden ||
-                rule.Access == PrefabAccess.Admin && !HarnessPrefabsPlugin.HarnessHammerTabsEnabled)
+            if (rule.Access == PrefabAccess.Hidden)
             {
                 continue;
             }
@@ -257,15 +243,11 @@ internal static class PrefabBuildManager
             }
         }
 
-        if (!HarnessPrefabsPlugin.HarnessHammerTabsEnabled)
-        {
-            RemoveAdminCategoryTabs(hammer);
-        }
 
-        PrefabCategoryRegistry.EnsureGrown(hammer);
         if (Player.m_localPlayer)
         {
-            Player.m_localPlayer.UpdateAvailablePiecesList();
+            UpdateAvailablePieces(Player.m_localPlayer);
+            PrefabCategoryRegistry.RefreshUi();
         }
     }
 
@@ -282,31 +264,22 @@ internal static class PrefabBuildManager
             return false;
         }
 
+        if (!RegisterScenePrefab(prefab)) return false;
         Piece piece = EnsurePiece(prefab, rule, hammer, resources, craftingStation);
         if (!piece)
         {
             return false;
         }
 
-        try
-        {
-            PieceManager.Instance.RegisterPieceInPieceTable(prefab, PieceTables.Hammer);
-        }
-        catch (Exception ex)
-        {
-            HarnessPrefabsPlugin.Log.LogWarning($"Jotunn failed to register prefab '{prefab.name}' in Hammer table: {ex.Message}");
-            return false;
-        }
-
-        if (!hammer.m_pieces.Contains(prefab))
-        {
-            return false;
-        }
-
+        // Materialize on every peer, including headless servers. Admin pieces stay
+        // outside native lists and are selected only through HarnessPieceList.
         if (rule.Access == PrefabAccess.Admin)
         {
-            AddedAdminPieceNames.Add(piece.m_name);
+            if (HarnessPrefabsPlugin.HarnessHammerTabsEnabled) PrefabIconRenderer.QueueIcon(piece);
+            return false;
         }
+        hammer.m_pieces.Add(prefab);
+        PrefabIconRenderer.QueueIcon(piece);
 
         return true;
     }
@@ -330,7 +303,7 @@ internal static class PrefabBuildManager
         piece.m_enabled = true;
         piece.m_name = string.IsNullOrWhiteSpace(rule.DisplayName) ? prefab.name : rule.DisplayName;
         piece.m_description = string.IsNullOrWhiteSpace(rule.Description) ? "" : rule.Description;
-        piece.m_category = PrefabCategoryRegistry.GetOrAdd(hammer, rule.Category);
+        PrefabCategoryRegistry.Assign(piece, rule.Category);
         piece.m_groundOnly = false;
         piece.m_groundPiece = false;
         piece.m_cultivatedGroundOnly = false;
@@ -355,8 +328,6 @@ internal static class PrefabBuildManager
         {
             piece.m_icon = ResolveDefaultIcon();
         }
-
-        PrefabIconRenderer.QueueIcon(piece);
 
         return piece;
     }
@@ -430,16 +401,19 @@ internal static class PrefabBuildManager
         }
 
         string normalizedName = stationName.Trim();
-        string internalName;
-        try
+        string internalName = normalizedName switch
         {
-            internalName = CraftingStations.GetInternalName(normalizedName);
-        }
-        catch (Exception ex)
-        {
-            HarnessPrefabsPlugin.Log.LogError($"Prefab '{prefabName}' crafting station '{normalizedName}' is invalid and the prefab will not be registered: {ex.Message}");
-            return false;
-        }
+            "Workbench" => "piece_workbench",
+            "Forge" => "forge",
+            "Stonecutter" => "piece_stonecutter",
+            "Cauldron" => "piece_cauldron",
+            "ArtisanTable" => "piece_artisanstation",
+            "BlackForge" => "blackforge",
+            "GaldrTable" => "piece_magetable",
+            "MeadKetill" => "piece_MeadCauldron",
+            "FoodPreparationTable" => "piece_preptable",
+            _ => normalizedName
+        };
 
         GameObject station = ZNetScene.instance
             ? ZNetScene.instance.GetPrefab(internalName) ?? ZNetScene.instance.GetPrefab(normalizedName)
@@ -459,11 +433,11 @@ internal static class PrefabBuildManager
         return false;
     }
 
-    private static Sprite ResolveDefaultIcon()
+    internal static Sprite ResolveDefaultIcon()
     {
         try
         {
-            Sprite mvbpDefault = PrefabManager.Cache.GetPrefab<Sprite>("mapicon_hildir1");
+            Sprite mvbpDefault = PrefabAssetResolver.GetFallbackIcon();
             if (mvbpDefault)
             {
                 return mvbpDefault;
@@ -487,7 +461,6 @@ internal static class PrefabBuildManager
     {
         RemoveAddedPiecesFromTable(hammer);
         AddedPrefabs.Clear();
-        AddedAdminPieceNames.Clear();
     }
 
     private static void RemoveAddedPiecesFromTable(PieceTable table)
@@ -503,29 +476,6 @@ internal static class PrefabBuildManager
             if (piece && AddedPrefabs.Contains(piece))
             {
                 table.m_pieces.RemoveAt(i);
-            }
-        }
-    }
-
-    private static void RemoveAdminCategoryTabs(PieceTable hammer)
-    {
-        if (!hammer || hammer.m_categories == null || hammer.m_categoryLabels == null)
-        {
-            return;
-        }
-
-        for (int i = hammer.m_categoryLabels.Count - 1; i >= 0; i--)
-        {
-            if (i >= hammer.m_categories.Count)
-            {
-                hammer.m_categoryLabels.RemoveAt(i);
-                continue;
-            }
-
-            if (BuildCategories.IsAdminCategory(hammer.m_categoryLabels[i]))
-            {
-                hammer.m_categoryLabels.RemoveAt(i);
-                hammer.m_categories.RemoveAt(i);
             }
         }
     }
@@ -600,7 +550,8 @@ internal static class PrefabBuildManager
     {
         try
         {
-            return PrefabManager.Cache.GetPrefab<GameObject>(prefabName);
+            GameObject prefab = PrefabAssetResolver.Find(prefabName);
+            return prefab && RegisterScenePrefab(prefab) ? prefab : null;
         }
         catch (Exception)
         {
@@ -608,14 +559,25 @@ internal static class PrefabBuildManager
         }
     }
 
+    private static bool RegisterScenePrefab(GameObject prefab)
+    {
+        ZNetScene scene = ZNetScene.instance;
+        if (!scene || !prefab) return false;
+        int hash = prefab.name.GetStableHashCode();
+        if (NamedPrefabs(scene).TryGetValue(hash, out GameObject existing))
+        {
+            if (ReferenceEquals(existing, prefab)) return true;
+            HarnessPrefabsPlugin.Log.LogError($"Prefab '{prefab.name}' conflicts with registered '{existing?.name}'; registration skipped.");
+            return false;
+        }
+        List<GameObject> list = prefab.GetComponent<ZNetView>() ? scene.m_prefabs : scene.m_nonNetViewPrefabs;
+        if (!list.Contains(prefab)) list.Add(prefab);
+        NamedPrefabs(scene).Add(hash, prefab);
+        return true;
+    }
+
     private static PieceTable GetHammerPieceTable()
     {
-        PieceTable jotunnHammer = PieceManager.Instance.GetPieceTable(PieceTables.Hammer);
-        if (jotunnHammer)
-        {
-            return jotunnHammer;
-        }
-
         GameObject hammer = ObjectDB.instance ? ObjectDB.instance.GetItemPrefab("Hammer") : null;
         ItemDrop itemDrop = hammer ? hammer.GetComponent<ItemDrop>() : null;
         return itemDrop?.m_itemData?.m_shared?.m_buildPieces;

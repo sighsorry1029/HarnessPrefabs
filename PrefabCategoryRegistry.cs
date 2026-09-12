@@ -1,313 +1,241 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
-using Jotunn.Configs;
-using Jotunn.Managers;
+using HarmonyLib;
+using TMPro;
 using UnityEngine;
-using PieceCategory = Piece.PieceCategory;
+using UnityEngine.Events;
+using UnityEngine.UI;
 
 namespace HarnessPrefabs;
 
+// Admin categories live in their own top-level BuildUi list. They stay outside
+// PieceTable.m_pieces so native categories, materials, recent and favorites do
+// not expose them to ordinary players.
 internal static class PrefabCategoryRegistry
 {
-    private const int FirstCustomCategory = (int)PieceCategory.Max + 1;
-
-    private static readonly Dictionary<string, PieceCategory> CategoriesByName = new(StringComparer.Ordinal);
-
-    public static PieceCategory GetOrAdd(PieceTable table, string categoryName)
+    private static readonly string[] AdminCategories =
     {
-        categoryName = NormalizeCategoryName(categoryName);
-        if (TryGetBuiltIn(categoryName, out PieceCategory builtIn))
-        {
-            EnsureTableHasCategory(table, builtIn, categoryName);
-            return builtIn;
-        }
+        BuildCategories.HarnessNature,
+        BuildCategories.HarnessStructures,
+        BuildCategories.HarnessProps
+    };
+    private static readonly Dictionary<Piece, string> Categories = new();
+    private static readonly List<Piece> OrderedPieces = new();
+    private static readonly Dictionary<string, int> TagIds = new(StringComparer.Ordinal)
+    {
+        [BuildCategories.HarnessNature] = 1000000,
+        [BuildCategories.HarnessStructures] = 1000001,
+        [BuildCategories.HarnessProps] = 1000002
+    };
+    private static readonly AccessTools.FieldRef<BuildUi, List<IPieceList>> Lists =
+        AccessTools.FieldRefAccess<BuildUi, List<IPieceList>>("m_pieceLists");
+    private static readonly AccessTools.FieldRef<BuildUi, List<Button>> Buttons =
+        AccessTools.FieldRefAccess<BuildUi, List<Button>>("m_tabButtons");
+    private static readonly AccessTools.FieldRef<BuildUi, TabHandler> Tabs =
+        AccessTools.FieldRefAccess<BuildUi, TabHandler>("m_tabHandler");
+    private static readonly AccessTools.FieldRef<BuildUi, int> CurrentList =
+        AccessTools.FieldRefAccess<BuildUi, int>("m_currentPieceList");
+    private static readonly Dictionary<BuildUi, Registration> Registrations = new();
+    private static BuildUi _ui;
 
-        if (TryGetExistingCustomCategory(table, categoryName, out PieceCategory existing))
-        {
-            if (!IsCategoryUsedByDifferentLabel(table, existing, categoryName))
-            {
-                CategoriesByName[categoryName] = existing;
-                EnsureTableHasCategory(table, existing, categoryName);
-                return existing;
-            }
-        }
-
-        if (CategoriesByName.TryGetValue(categoryName, out PieceCategory category))
-        {
-            if (!IsCategoryUsedByDifferentLabel(table, category, categoryName))
-            {
-                EnsureTableHasCategory(table, category, categoryName);
-                return category;
-            }
-
-            CategoriesByName.Remove(categoryName);
-        }
-
-        if (TryGetJotunnCategory(categoryName, out category) &&
-            !IsCategoryUsedByDifferentLabel(table, category, categoryName))
-        {
-            CategoriesByName[categoryName] = category;
-            EnsureTableHasCategory(table, category, categoryName);
-            return category;
-        }
-
-        if (TryAddJotunnCategory(categoryName, out category) &&
-            !IsCategoryUsedByDifferentLabel(table, category, categoryName))
-        {
-            CategoriesByName[categoryName] = category;
-            EnsureTableHasCategory(table, category, categoryName);
-            return category;
-        }
-
-        category = AllocateCategory(table);
-        CategoriesByName[categoryName] = category;
-        EnsureTableHasCategory(table, category, categoryName);
-        return category;
+    public static void Clear()
+    {
+        Categories.Clear();
+        OrderedPieces.Clear();
     }
 
-    public static void EnsureGrown(PieceTable table)
+    public static void Dispose()
     {
-        if (!table || table.m_availablePieces == null)
+        foreach (BuildUi ui in new List<BuildUi>(Registrations.Keys))
         {
+            if (ui) Detach(ui, destroying: false);
+            else Registrations.Remove(ui);
+        }
+        _ui = null;
+        Clear();
+    }
+
+    public static void Assign(Piece piece, string categoryName)
+    {
+        string name = BuildCategories.NormalizeCategory(categoryName);
+        if (!Categories.ContainsKey(piece)) OrderedPieces.Add(piece);
+        Categories[piece] = name;
+        piece.m_category = name switch
+        {
+            BuildCategories.Crafting => Piece.PieceCategory.Crafting,
+            BuildCategories.Building => Piece.PieceCategory.BuildingWorkbench,
+            BuildCategories.Stonecutter => Piece.PieceCategory.BuildingStonecutter,
+            BuildCategories.Furniture => Piece.PieceCategory.Furniture,
+            "DeepNorth" => Piece.PieceCategory.DeepNorth,
+            "Feasts" => Piece.PieceCategory.Feasts,
+            "Food" => Piece.PieceCategory.Food,
+            "Meads" => Piece.PieceCategory.Meads,
+            _ => Piece.PieceCategory.Misc
+        };
+        if (piece.m_usage == 0) piece.m_usage = Piece.UsageTagFlags.Misc;
+    }
+
+    public static void RefreshUi()
+    {
+        BuildUi ui = _ui;
+        if (!ui) return;
+        SetAttached(ui, HarnessPrefabsPlugin.HarnessHammerTabsEnabled);
+        if (ui.gameObject.activeInHierarchy && Player.m_localPlayer)
+            ui.SelectPieceList(CurrentList(ui), refreshOnly: true);
+    }
+
+    private static void SetAttached(BuildUi ui, bool attached)
+    {
+        if (attached) Attach(ui);
+        else Detach(ui, destroying: false);
+    }
+
+    private static void Attach(BuildUi ui)
+    {
+        if (Registrations.ContainsKey(ui)) return;
+        List<IPieceList> lists = Lists(ui);
+        List<Button> buttons = Buttons(ui);
+        TabHandler handler = Tabs(ui);
+        if (buttons.Count == 0 || lists.Count != buttons.Count || handler.m_tabs.Count != lists.Count)
+        {
+            HarnessPrefabsPlugin.Log.LogWarning("Build menu tab layout is inconsistent; HarnessPrefabs section was not inserted.");
             return;
         }
 
-        int needed = (int)PieceCategory.Max;
-        if (table.m_categories != null)
+        HarnessPieceList pieceList = new();
+        Button button = UnityEngine.Object.Instantiate(buttons[0], buttons[0].transform.parent);
+        button.name = "HarnessPrefabsTab";
+        button.transform.SetAsLastSibling();
+        button.onClick = new Button.ButtonClickedEvent();
+        foreach (TMP_Text label in button.GetComponentsInChildren<TMP_Text>(true))
+            label.text = pieceList.DisplayName;
+
+        UnityEvent selectList = new();
+        selectList.AddListener(() => ui.SelectPieceList(lists.IndexOf(pieceList), refreshOnly: false));
+        TabHandler.Tab tab = new()
         {
-            foreach (PieceCategory category in table.m_categories)
-            {
-                int value = (int)category;
-                if (value >= 0 && value < (int)PieceCategory.All)
-                {
-                    needed = Math.Max(needed, value + 1);
-                }
-            }
+            m_button = button,
+            m_onClick = selectList
+        };
+        button.onClick.AddListener(() => handler.SetActiveTab(lists.IndexOf(pieceList), forceSelect: false, invokeOnClick: true));
+        lists.Add(pieceList);
+        buttons.Add(button);
+        handler.m_tabs.Add(tab);
+        Registrations.Add(ui, new Registration(pieceList, button, tab));
+    }
+
+    private static void Detach(BuildUi ui, bool destroying)
+    {
+        if (!Registrations.TryGetValue(ui, out Registration registration)) return;
+        Registrations.Remove(ui);
+        registration.Tab.m_onClick?.RemoveAllListeners();
+        if (registration.Button) registration.Button.onClick.RemoveAllListeners();
+        if (destroying) return;
+
+        List<IPieceList> lists = Lists(ui);
+        int index = lists.IndexOf(registration.PieceList);
+        TabHandler handler = Tabs(ui);
+        if (index >= 0 && (handler.GetActiveTab() == index || CurrentList(ui) == index))
+        {
+            CurrentList(ui) = 0;
+            handler.SetActiveTabWithoutInvokingOnClick(0);
+            if (ui.isActiveAndEnabled && Player.m_localPlayer)
+                ui.SelectPieceList(0, refreshOnly: false);
         }
-
-        if (table.m_pieces != null)
+        if (index >= 0)
         {
-            foreach (GameObject pieceObject in table.m_pieces)
-            {
-                if (!pieceObject)
-                {
-                    continue;
-                }
+            lists.RemoveAt(index);
+            Buttons(ui).Remove(registration.Button);
+            handler.m_tabs.Remove(registration.Tab);
+        }
+        if (registration.Button) UnityEngine.Object.Destroy(registration.Button.gameObject);
+    }
 
-                Piece piece = pieceObject.GetComponent<Piece>();
-                if (piece)
+    [HarmonyPatch(typeof(BuildUi), "Awake")]
+    private static class BuildUiAwakePatch
+    {
+        [HarmonyPostfix, HarmonyPriority(Priority.Last - 100)]
+        private static void Postfix(BuildUi __instance)
+        {
+            _ui = __instance;
+            SetAttached(__instance, HarnessPrefabsPlugin.HarnessHammerTabsEnabled);
+        }
+    }
+
+    [HarmonyPatch(typeof(BuildUi), "OnDestroy")]
+    private static class BuildUiDestroyPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(BuildUi __instance)
+        {
+            Detach(__instance, destroying: true);
+            if (ReferenceEquals(_ui, __instance)) _ui = null;
+        }
+    }
+
+    [HarmonyPatch(typeof(BuildUiPieceButton), nameof(BuildUiPieceButton.UpdateRequirements))]
+    private static class BuildIconRefreshPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(BuildUiPieceButton __instance, Image ___m_icon)
+        {
+            Piece piece = __instance.Piece;
+            if (piece && Categories.ContainsKey(piece) && ___m_icon && ___m_icon.sprite != piece.m_icon)
+                ___m_icon.sprite = piece.m_icon;
+        }
+    }
+
+    private sealed class HarnessPieceList : IPieceList
+    {
+        private readonly List<string> _availableCategories = new();
+        public string DisplayName => "HarnessPrefabs";
+        public bool ShowTags => true;
+        public bool CanCustomizeTags => false;
+        public int TagCount => _availableCategories.Count;
+        public int TagSeparatorIndex => -1;
+
+        public void UpdateAvailableTags(PieceTable pieceTable)
+        {
+            _availableCategories.Clear();
+            foreach (string category in AdminCategories)
+            {
+                foreach (Piece piece in OrderedPieces)
                 {
-                    int value = (int)piece.m_category;
-                    if (value >= 0 && value < (int)PieceCategory.All)
+                    if (piece && Categories.TryGetValue(piece, out string label) && label == category)
                     {
-                        needed = Math.Max(needed, value + 1);
+                        _availableCategories.Add(category);
+                        break;
                     }
                 }
             }
         }
 
-        while (table.m_availablePieces.Count < needed)
+        public string GetTagDisplayName(int index) => _availableCategories[index];
+        public int GetTagIdByIndex(int index) => TagIds[_availableCategories[index]];
+
+        public void GetAvailablePiecesWithTag(int tagId, PieceTable pieceTable, IList<Piece> resultOut)
         {
-            table.m_availablePieces.Add(new List<Piece>());
-        }
-
-        GrowVectorArray(ref table.m_selectedPiece, needed);
-        GrowVectorArray(ref table.m_lastSelectedPiece, needed);
-    }
-
-    private static string NormalizeCategoryName(string categoryName)
-    {
-        return BuildCategories.NormalizeCategory(categoryName);
-    }
-
-    private static bool TryGetBuiltIn(string name, out PieceCategory category)
-    {
-        switch (name)
-        {
-            case BuildCategories.Misc:
-                category = PieceCategory.Misc;
-                return true;
-            case BuildCategories.Crafting:
-                category = PieceCategory.Crafting;
-                return true;
-            case BuildCategories.Building:
-                category = PieceCategory.BuildingWorkbench;
-                return true;
-            case BuildCategories.Stonecutter:
-                category = PieceCategory.BuildingStonecutter;
-                return true;
-            case BuildCategories.Furniture:
-                category = PieceCategory.Furniture;
-                return true;
-            default:
-                category = PieceCategory.Misc;
-                return false;
+            if (!HarnessPrefabsPlugin.HarnessHammerTabsEnabled) return;
+            foreach (Piece piece in OrderedPieces)
+                if (piece && Categories.TryGetValue(piece, out string category) &&
+                    BuildCategories.IsAdminCategory(category) &&
+                    (tagId == -1 || TagIds[category] == tagId))
+                    resultOut.Add(piece);
         }
     }
 
-    private static PieceCategory AllocateCategory(PieceTable table)
+    private sealed class Registration
     {
-        int next = FirstCustomCategory;
-        if (table.m_categories != null)
+        internal readonly HarnessPieceList PieceList;
+        internal readonly Button Button;
+        internal readonly TabHandler.Tab Tab;
+        internal Registration(HarnessPieceList pieceList, Button button, TabHandler.Tab tab)
         {
-            foreach (PieceCategory category in table.m_categories)
-            {
-                int value = (int)category;
-                if (value >= FirstCustomCategory && value < (int)PieceCategory.All)
-                {
-                    next = Math.Max(next, value + 1);
-                }
-            }
+            PieceList = pieceList;
+            Button = button;
+            Tab = tab;
         }
-
-        foreach (PieceCategory category in CategoriesByName.Values)
-        {
-            int value = (int)category;
-            if (value >= FirstCustomCategory && value < (int)PieceCategory.All)
-            {
-                next = Math.Max(next, value + 1);
-            }
-        }
-
-        if (next >= (int)PieceCategory.All)
-        {
-            next = (int)PieceCategory.All - 1;
-        }
-
-        return (PieceCategory)next;
-    }
-
-    private static bool TryGetJotunnCategory(string categoryName, out PieceCategory category)
-    {
-        category = (PieceCategory)0;
-        try
-        {
-            PieceCategory? existing = PieceManager.Instance.GetPieceCategory(categoryName);
-            if (!existing.HasValue || existing.Value == PieceCategory.Max || existing.Value == PieceCategory.All)
-            {
-                return false;
-            }
-
-            category = existing.Value;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryAddJotunnCategory(string categoryName, out PieceCategory category)
-    {
-        category = (PieceCategory)0;
-        try
-        {
-            category = PieceManager.Instance.AddPieceCategory(categoryName);
-            return category != PieceCategory.Max && category != PieceCategory.All;
-        }
-        catch (Exception ex)
-        {
-            HarnessPrefabsPlugin.Log.LogWarning($"Jotunn failed to add Hammer category '{categoryName}': {ex.Message}");
-            return false;
-        }
-    }
-
-    private static bool IsCategoryUsedByDifferentLabel(PieceTable table, PieceCategory category, string label)
-    {
-        if (!table || table.m_categories == null || table.m_categoryLabels == null)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < table.m_categories.Count && i < table.m_categoryLabels.Count; i++)
-        {
-            if (table.m_categories[i] == category &&
-                !string.Equals(table.m_categoryLabels[i], label, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryGetExistingCustomCategory(PieceTable table, string label, out PieceCategory category)
-    {
-        category = (PieceCategory)0;
-        if (!table || table.m_categories == null || table.m_categoryLabels == null)
-        {
-            return false;
-        }
-
-        for (int i = table.m_categoryLabels.Count - 1; i >= 0; i--)
-        {
-            if (!string.Equals(table.m_categoryLabels[i], label, StringComparison.Ordinal) || i >= table.m_categories.Count)
-            {
-                continue;
-            }
-
-            PieceCategory found = table.m_categories[i];
-            if (found == PieceCategory.Max || found == PieceCategory.All)
-            {
-                table.m_categoryLabels.RemoveAt(i);
-                table.m_categories.RemoveAt(i);
-                continue;
-            }
-
-            category = found;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static void EnsureTableHasCategory(PieceTable table, PieceCategory category, string label)
-    {
-        if (!table)
-        {
-            return;
-        }
-
-        table.m_categories ??= new List<PieceCategory>();
-        table.m_categoryLabels ??= new List<string>();
-        for (int i = table.m_categoryLabels.Count - 1; i >= 0; i--)
-        {
-            if (i >= table.m_categories.Count)
-            {
-                table.m_categoryLabels.RemoveAt(i);
-                continue;
-            }
-
-            if (string.Equals(table.m_categoryLabels[i], label, StringComparison.Ordinal) &&
-                table.m_categories[i] != category)
-            {
-                table.m_categoryLabels.RemoveAt(i);
-                table.m_categories.RemoveAt(i);
-            }
-        }
-
-        if (!table.m_categories.Contains(category))
-        {
-            table.m_categories.Add(category);
-            table.m_categoryLabels.Add(label);
-        }
-    }
-
-    private static void GrowVectorArray(ref Vector2Int[] array, int needed)
-    {
-        if (array == null)
-        {
-            array = new Vector2Int[needed];
-            return;
-        }
-
-        if (array.Length >= needed)
-        {
-            return;
-        }
-
-        Vector2Int[] grown = new Vector2Int[needed];
-        Array.Copy(array, grown, array.Length);
-        array = grown;
     }
 }

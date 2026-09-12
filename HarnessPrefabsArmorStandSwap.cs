@@ -10,6 +10,24 @@ namespace HarnessPrefabs;
 
 internal static class HarnessPrefabsArmorStandSwap
 {
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidLeftItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_leftItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidRightItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_rightItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidHiddenLeftItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_hiddenLeftItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidHiddenRightItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_hiddenRightItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidHelmetItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_helmetItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidChestItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_chestItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidLegItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_legItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidShoulderItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_shoulderItem");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData?> HumanoidUtilityItem = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData?>("m_utilityItem");
+    private static readonly AccessTools.FieldRef<Humanoid, float> HumanoidUseItemTime = AccessTools.FieldRefAccess<Humanoid, float>("m_useItemTime");
+    private static readonly AccessTools.FieldRef<Humanoid, ItemDrop.ItemData.SharedData> HumanoidUseItemVisual = AccessTools.FieldRefAccess<Humanoid, ItemDrop.ItemData.SharedData>("m_useItemVisual");
+    private static readonly AccessTools.FieldRef<ArmorStand, ItemDrop.ItemData> ArmorStandQueuedItem = AccessTools.FieldRefAccess<ArmorStand, ItemDrop.ItemData>("m_queuedItem");
+    private static readonly AccessTools.FieldRef<ArmorStand, ZNetView> ArmorStandNview = AccessTools.FieldRefAccess<ArmorStand, ZNetView>("m_nview");
+    private static readonly Func<ArmorStand, ArmorStand.ArmorStandSlot, ItemDrop.ItemData, bool> CanAttach = AccessTools.MethodDelegate<Func<ArmorStand, ArmorStand.ArmorStandSlot, ItemDrop.ItemData, bool>>(AccessTools.Method(typeof(ArmorStand), "CanAttach"));
+    private static readonly Action<Humanoid> SetupEquipment = AccessTools.MethodDelegate<Action<Humanoid>>(AccessTools.Method(typeof(Humanoid), "SetupEquipment"));
+    private static readonly Action<ArmorStand> UpdateSupports = AccessTools.MethodDelegate<Action<ArmorStand>>(AccessTools.Method(typeof(ArmorStand), "UpdateSupports"));
+    private static readonly AccessTools.FieldRef<ArmorStand, Cloth[]> ArmorStandCloths = AccessTools.FieldRefAccess<ArmorStand, Cloth[]>("m_cloths");
+
     private const float OwnershipTimeoutSeconds = 2f;
     private static readonly HashSet<string> SupportedPrefabNames = new(StringComparer.Ordinal)
     {
@@ -177,7 +195,7 @@ internal static class HarnessPrefabsArmorStandSwap
             return false;
         }
 
-        if (stand.m_queuedItem != null)
+        if (ArmorStandQueuedItem(stand) != null)
         {
             error = "This armor stand is already handling another item.";
             return false;
@@ -303,18 +321,18 @@ internal static class HarnessPrefabsArmorStandSwap
             return false;
         }
 
-        string incomingName = zdo.GetString(index + "_item", "");
+        int incomingHash = zdo.GetInt(index + "_item", 0);
         ItemDrop.ItemData? standSnapshot = null;
         ItemDrop.ItemData? incoming = null;
-        if (!string.IsNullOrEmpty(incomingName))
+        if (incomingHash != 0)
         {
-            if (!TryLoadStandItem(index, incomingName, zdo, out standSnapshot, out error) ||
+            if (!TryLoadStandItem(index, incomingHash, zdo, out standSnapshot, out error) ||
                 !TryValidateIncomingItem(definition, standSnapshot, out error))
             {
                 return false;
             }
 
-            if (!stand.CanAttach(standSlot, standSnapshot) || !HasArmorStandVisual(standSnapshot))
+            if (!CanAttach(stand, standSlot, standSnapshot) || !HasArmorStandVisual(standSnapshot))
             {
                 error = $"The armor stand's {definition.VisSlot} item is incompatible with its current slot.";
                 return false;
@@ -345,15 +363,15 @@ internal static class HarnessPrefabsArmorStandSwap
         out string error)
     {
         handSet = null!;
-        bool hasActiveHandItem = player.m_leftItem != null || player.m_rightItem != null;
-        bool hasSheathedHandItem = player.m_hiddenLeftItem != null || player.m_hiddenRightItem != null;
+        bool hasActiveHandItem = HumanoidLeftItem(player) != null || HumanoidRightItem(player) != null;
+        bool hasSheathedHandItem = HumanoidHiddenLeftItem(player) != null || HumanoidHiddenRightItem(player) != null;
         if (hasActiveHandItem && hasSheathedHandItem)
         {
             error = "Finish using or drawing your hand equipment before swapping this set.";
             return false;
         }
 
-        if (player.m_useItemTime > 0f || player.m_useItemVisual != null)
+        if (HumanoidUseItemTime(player) > 0f || HumanoidUseItemVisual(player) != null)
         {
             error = "Finish using the current item before swapping this set.";
             return false;
@@ -374,8 +392,8 @@ internal static class HarnessPrefabsArmorStandSwap
             return false;
         }
 
-        ItemDrop.ItemData? originalLeft = originalSheathed ? player.m_hiddenLeftItem : player.m_leftItem;
-        ItemDrop.ItemData? originalRight = originalSheathed ? player.m_hiddenRightItem : player.m_rightItem;
+        ItemDrop.ItemData? originalLeft = originalSheathed ? HumanoidHiddenLeftItem(player) : HumanoidLeftItem(player);
+        ItemDrop.ItemData? originalRight = originalSheathed ? HumanoidHiddenRightItem(player) : HumanoidRightItem(player);
         if (!TryValidatePlayerHandItem(player, inventory, originalLeft, "left", originalSheathed, out error) ||
             !TryValidatePlayerHandItem(player, inventory, originalRight, "right", originalSheathed, out error))
         {
@@ -499,14 +517,14 @@ internal static class HarnessPrefabsArmorStandSwap
     {
         standSnapshot = null;
         incoming = null;
-        string incomingName = zdo.GetString(index + "_item", "");
-        if (string.IsNullOrEmpty(incomingName))
+        int incomingHash = zdo.GetInt(index + "_item", 0);
+        if (incomingHash == 0)
         {
             error = "";
             return true;
         }
 
-        if (!TryLoadStandItem(index, incomingName, zdo, out ItemDrop.ItemData loaded, out error) ||
+        if (!TryLoadStandItem(index, incomingHash, zdo, out ItemDrop.ItemData loaded, out error) ||
             !TryValidateStandHandItem(stand, standSlot, visSlot, loaded, out error))
         {
             return false;
@@ -567,7 +585,7 @@ internal static class HarnessPrefabsArmorStandSwap
         ArmorStand.ArmorStandSlot standSlot,
         ItemDrop.ItemData? item)
     {
-        return item == null || stand.CanAttach(standSlot, item);
+        return item == null || CanAttach(stand, standSlot, item);
     }
 
     private static bool TryExecute(SwapPlan plan, out string error)
@@ -1041,7 +1059,7 @@ internal static class HarnessPrefabsArmorStandSwap
             return false;
         }
 
-        if (!stand.CanAttach(standSlot, item) || !HasArmorStandVisual(item))
+        if (!CanAttach(stand, standSlot, item) || !HasArmorStandVisual(item))
         {
             error = $"The equipped {definition.VisSlot} item cannot be displayed on this armor stand.";
             return false;
@@ -1135,7 +1153,7 @@ internal static class HarnessPrefabsArmorStandSwap
             return false;
         }
 
-        if (!stand.CanAttach(standSlot, item) || !HasArmorStandVisual(item))
+        if (!CanAttach(stand, standSlot, item) || !HasArmorStandVisual(item))
         {
             error = $"The armor stand's {visSlot} item is incompatible with its current slot.";
             return false;
@@ -1340,17 +1358,24 @@ internal static class HarnessPrefabsArmorStandSwap
 
     private static bool TryLoadStandItem(
         int index,
-        string prefabName,
+        int prefabHash,
         ZDO zdo,
         out ItemDrop.ItemData item,
         out string error)
     {
         item = null!;
-        GameObject prefab = ObjectDB.instance.GetItemPrefab(prefabName);
+        GameObject prefab = ObjectDB.instance.GetItemPrefab(prefabHash);
         ItemDrop? itemDrop = prefab ? prefab.GetComponent<ItemDrop>() : null;
         if (!prefab || !itemDrop)
         {
-            error = $"Armor stand item prefab '{prefabName}' could not be resolved.";
+            error = $"Armor stand item prefab '{prefabHash}' could not be resolved.";
+            return false;
+        }
+
+        byte[] data = zdo.GetByteArray((index + "_itemData").GetStableHashCode());
+        if (data == null || data.Length <= 2)
+        {
+            error = "Armor stand item data is missing; no items were moved.";
             return false;
         }
 
@@ -1358,10 +1383,11 @@ internal static class HarnessPrefabsArmorStandSwap
         item.m_customData.Clear();
         item.m_dropPrefab = prefab;
         item.m_equipped = false;
-        ItemDrop.LoadFromZDO(index, item, zdo);
+        if (!StandItemData.TryRead(data, prefabHash, item, out error)) return false;
         error = "";
         return true;
     }
+
 
     private static bool TryReserveIncomingPositions(Inventory inventory, List<SlotPlan> slots, out string error)
     {
@@ -1444,52 +1470,33 @@ internal static class HarnessPrefabsArmorStandSwap
     {
         if (item == null)
         {
-            zdo.Set(index + "_item", "");
+            zdo.Set(index + "_item", 0);
+            zdo.Set(index + "_variant", 0);
             return;
         }
 
-        ItemDrop.SaveToZDO(index, item, zdo);
-        zdo.Set(index + "_item", item.m_dropPrefab.name);
+        ItemDrop.SaveToZDO(item, zdo, index);
+        zdo.Set(index + "_item", item.m_dropPrefab.name.GetStableHashCode());
+        zdo.Set(index + "_variant", item.m_variant);
     }
 
     private static bool StandItemMatches(ZDO zdo, int index, ItemDrop.ItemData? expected)
     {
-        string name = zdo.GetString(index + "_item", "");
+        int itemHash = zdo.GetInt(index + "_item", 0);
         if (expected == null)
         {
-            return string.IsNullOrEmpty(name);
+            return itemHash == 0;
         }
 
-        if (!string.Equals(name, expected.m_dropPrefab.name, StringComparison.Ordinal) ||
-            !TryLoadStandItem(index, name, zdo, out ItemDrop.ItemData actual, out _))
+        if (itemHash != expected.m_dropPrefab.name.GetStableHashCode() ||
+            !TryLoadStandItem(index, itemHash, zdo, out ItemDrop.ItemData actual, out _))
         {
             return false;
         }
 
-        if (actual.m_stack != expected.m_stack ||
-            !Mathf.Approximately(actual.m_durability, expected.m_durability) ||
-            actual.m_quality != expected.m_quality ||
-            actual.m_variant != expected.m_variant ||
-            actual.m_crafterID != expected.m_crafterID ||
-            !string.Equals(actual.m_crafterName, expected.m_crafterName, StringComparison.Ordinal) ||
-            actual.m_worldLevel != expected.m_worldLevel ||
-            actual.m_pickedUp != expected.m_pickedUp ||
-            actual.m_customData.Count != expected.m_customData.Count)
-        {
-            return false;
-        }
-
-        foreach (KeyValuePair<string, string> pair in expected.m_customData)
-        {
-            if (!actual.m_customData.TryGetValue(pair.Key, out string value) ||
-                !string.Equals(value, pair.Value, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return StandItemData.Matches(actual, expected);
     }
+
 
     private static void RefreshVisuals(
         ArmorStand stand,
@@ -1497,28 +1504,15 @@ internal static class HarnessPrefabsArmorStandSwap
         List<SlotPlan> slots,
         bool useOutgoing)
     {
-        ItemDrop.ItemData? previousQueuedItem = stand.m_queuedItem;
-        int previousQueuedSlot = stand.m_queuedSlot;
-        try
+        foreach (SlotPlan slot in slots)
         {
-            foreach (SlotPlan slot in slots)
-            {
-                ItemDrop.ItemData? item = useOutgoing ? slot.OutgoingSnapshot : slot.StandSnapshot;
-                string name = item?.m_dropPrefab.name ?? "";
-                int variant = item?.m_variant ?? 0;
-                stand.m_queuedItem = item;
-                stand.m_queuedSlot = slot.Index;
-                nview.InvokeRPC(ZNetView.Everybody, "RPC_SetVisualItem", slot.Index, name, variant);
-            }
+            ItemDrop.ItemData? item = useOutgoing ? slot.OutgoingSnapshot : slot.StandSnapshot;
+            int itemHash = item?.m_dropPrefab.name.GetStableHashCode() ?? 0;
+            nview.InvokeRPC(ZNetView.Everybody, "RPC_SetVisualItem", slot.Index, itemHash, item?.m_variant ?? 0);
         }
-        finally
-        {
-            stand.m_queuedItem = previousQueuedItem;
-            stand.m_queuedSlot = previousQueuedSlot;
-        }
-
-        stand.UpdateSupports();
-        stand.m_cloths = stand.GetComponentsInChildren<Cloth>();
+        // The game's empty-slot branch returns before refreshing supports and cloths.
+        UpdateSupports(stand);
+        ArmorStandCloths(stand) = stand.GetComponentsInChildren<Cloth>();
     }
 
     private static bool HasArmorStandVisual(ItemDrop.ItemData item)
@@ -1568,9 +1562,9 @@ internal static class HarnessPrefabsArmorStandSwap
 
     private static ZNetView GetNetView(ArmorStand stand)
     {
-        if (stand.m_nview)
+        if (ArmorStandNview(stand))
         {
-            return stand.m_nview;
+            return ArmorStandNview(stand);
         }
 
         return stand.m_netViewOverride ? stand.m_netViewOverride : stand.GetComponent<ZNetView>();
@@ -1580,11 +1574,11 @@ internal static class HarnessPrefabsArmorStandSwap
     {
         return slot switch
         {
-            VisSlot.Helmet => player.m_helmetItem,
-            VisSlot.Chest => player.m_chestItem,
-            VisSlot.Legs => player.m_legItem,
-            VisSlot.Shoulder => player.m_shoulderItem,
-            VisSlot.Utility => player.m_utilityItem,
+            VisSlot.Helmet => HumanoidHelmetItem(player),
+            VisSlot.Chest => HumanoidChestItem(player),
+            VisSlot.Legs => HumanoidLegItem(player),
+            VisSlot.Shoulder => HumanoidShoulderItem(player),
+            VisSlot.Utility => HumanoidUtilityItem(player),
             _ => null
         };
     }
@@ -1595,13 +1589,13 @@ internal static class HarnessPrefabsArmorStandSwap
         ItemDrop.ItemData? expectedRight,
         out string error)
     {
-        if (player.m_leftItem != null || player.m_rightItem != null)
+        if (HumanoidLeftItem(player) != null || HumanoidRightItem(player) != null)
         {
             error = "The player's hands were not empty before equipping the new hand set.";
             return false;
         }
 
-        if (player.m_hiddenLeftItem != null || player.m_hiddenRightItem != null)
+        if (HumanoidHiddenLeftItem(player) != null || HumanoidHiddenRightItem(player) != null)
         {
             error = "The player's sheathed hand equipment changed during the swap.";
             return false;
@@ -1666,9 +1660,9 @@ internal static class HarnessPrefabsArmorStandSwap
             expectedRight.m_equipped = false;
         }
 
-        player.m_hiddenLeftItem = expectedLeft;
-        player.m_hiddenRightItem = expectedRight;
-        player.SetupEquipment();
+        HumanoidHiddenLeftItem(player) = expectedLeft;
+        HumanoidHiddenRightItem(player) = expectedRight;
+        SetupEquipment(player);
 
         if (!HandStateMatches(player, expectedLeft, expectedRight, sheathed: true))
         {
@@ -1689,10 +1683,10 @@ internal static class HarnessPrefabsArmorStandSwap
             return true;
         }
 
-        if (!IsKnownHandReference(plan.Player.m_leftItem, hands) ||
-            !IsKnownHandReference(plan.Player.m_rightItem, hands) ||
-            !IsKnownHandReference(plan.Player.m_hiddenLeftItem, hands) ||
-            !IsKnownHandReference(plan.Player.m_hiddenRightItem, hands))
+        if (!IsKnownHandReference(HumanoidLeftItem(plan.Player), hands) ||
+            !IsKnownHandReference(HumanoidRightItem(plan.Player), hands) ||
+            !IsKnownHandReference(HumanoidHiddenLeftItem(plan.Player), hands) ||
+            !IsKnownHandReference(HumanoidHiddenRightItem(plan.Player), hands))
         {
             error = "an unrelated item entered the player's hand state";
             return false;
@@ -1758,85 +1752,85 @@ internal static class HarnessPrefabsArmorStandSwap
         }
 
         return sheathed
-            ? player.m_leftItem == null &&
-              player.m_rightItem == null &&
-              ReferenceEquals(player.m_hiddenLeftItem, expectedLeft) &&
-              ReferenceEquals(player.m_hiddenRightItem, expectedRight)
-            : ReferenceEquals(player.m_leftItem, expectedLeft) &&
-              ReferenceEquals(player.m_rightItem, expectedRight) &&
-              player.m_hiddenLeftItem == null &&
-              player.m_hiddenRightItem == null;
+            ? HumanoidLeftItem(player) == null &&
+              HumanoidRightItem(player) == null &&
+              ReferenceEquals(HumanoidHiddenLeftItem(player), expectedLeft) &&
+              ReferenceEquals(HumanoidHiddenRightItem(player), expectedRight)
+            : ReferenceEquals(HumanoidLeftItem(player), expectedLeft) &&
+              ReferenceEquals(HumanoidRightItem(player), expectedRight) &&
+              HumanoidHiddenLeftItem(player) == null &&
+              HumanoidHiddenRightItem(player) == null;
     }
 
     private static bool AreHandReferencesClear(Player player)
     {
-        return player.m_leftItem == null &&
-               player.m_rightItem == null &&
-               player.m_hiddenLeftItem == null &&
-               player.m_hiddenRightItem == null;
+        return HumanoidLeftItem(player) == null &&
+               HumanoidRightItem(player) == null &&
+               HumanoidHiddenLeftItem(player) == null &&
+               HumanoidHiddenRightItem(player) == null;
     }
 
     private static void ForceClearEquippedItem(Player player, ItemDrop.ItemData expected)
     {
         bool changed = false;
-        if (ReferenceEquals(player.m_helmetItem, expected))
+        if (ReferenceEquals(HumanoidHelmetItem(player), expected))
         {
-            player.m_helmetItem = null;
+            HumanoidHelmetItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_chestItem, expected))
+        if (ReferenceEquals(HumanoidChestItem(player), expected))
         {
-            player.m_chestItem = null;
+            HumanoidChestItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_legItem, expected))
+        if (ReferenceEquals(HumanoidLegItem(player), expected))
         {
-            player.m_legItem = null;
+            HumanoidLegItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_shoulderItem, expected))
+        if (ReferenceEquals(HumanoidShoulderItem(player), expected))
         {
-            player.m_shoulderItem = null;
+            HumanoidShoulderItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_utilityItem, expected))
+        if (ReferenceEquals(HumanoidUtilityItem(player), expected))
         {
-            player.m_utilityItem = null;
+            HumanoidUtilityItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_leftItem, expected))
+        if (ReferenceEquals(HumanoidLeftItem(player), expected))
         {
-            player.m_leftItem = null;
+            HumanoidLeftItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_rightItem, expected))
+        if (ReferenceEquals(HumanoidRightItem(player), expected))
         {
-            player.m_rightItem = null;
+            HumanoidRightItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_hiddenLeftItem, expected))
+        if (ReferenceEquals(HumanoidHiddenLeftItem(player), expected))
         {
-            player.m_hiddenLeftItem = null;
+            HumanoidHiddenLeftItem(player) = null;
             changed = true;
         }
 
-        if (ReferenceEquals(player.m_hiddenRightItem, expected))
+        if (ReferenceEquals(HumanoidHiddenRightItem(player), expected))
         {
-            player.m_hiddenRightItem = null;
+            HumanoidHiddenRightItem(player) = null;
             changed = true;
         }
 
         if (changed || expected.m_equipped)
         {
             expected.m_equipped = false;
-            player.SetupEquipment();
+            SetupEquipment(player);
         }
     }
 
@@ -1845,6 +1839,68 @@ internal static class HarnessPrefabsArmorStandSwap
         if (player)
         {
             player.Message(MessageHud.MessageType.Center, message);
+        }
+    }
+
+
+    // Serializer-only operations share no Unity object lifecycle state.
+    internal static class StandItemData
+    {
+        internal static bool TryRead(byte[] data, int prefabHash, ItemDrop.ItemData item, out string error)
+        {
+            try
+            {
+                ZPackage package = new(data);
+                Version.Item version = (Version.Item)package.ReadByte();
+                if (!Enum.IsDefined(typeof(Version.Item), version))
+                {
+                    error = "Armor stand item data has an unknown game format.";
+                    return false;
+                }
+                int storedHash = ItemDrop.ItemData.Load(package, item, version);
+                if (storedHash != prefabHash || package.GetPos() != data.Length)
+                {
+                    error = "Armor stand item identity or payload does not match; no items were moved.";
+                    return false;
+                }
+                error = "";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "Armor stand item data could not be read: " + ex.Message;
+                return false;
+            }
+        }
+        internal static bool Matches(ItemDrop.ItemData actual, ItemDrop.ItemData expected)
+        {
+            // ItemData.Save stores durability as integer hundredths in 1.0.7. Compare
+            // the game's stored value, otherwise a successful write triggers rollback.
+            float savedDurability = (int)(expected.m_durability * 100f) * 0.01f;
+            if (actual.m_stack != expected.m_stack ||
+                actual.m_durability != savedDurability ||
+                actual.m_quality != expected.m_quality ||
+                actual.m_variant != expected.m_variant ||
+                actual.m_crafterID != expected.m_crafterID ||
+                !string.Equals(actual.m_crafterName, expected.m_crafterID == 0 ? "" : expected.m_crafterName, StringComparison.Ordinal) ||
+                actual.m_worldLevel != expected.m_worldLevel ||
+                actual.m_pickedUp != expected.m_pickedUp ||
+                actual.m_cheated != expected.m_cheated ||
+                actual.m_customData.Count != expected.m_customData.Count)
+            {
+                return false;
+            }
+
+            foreach (KeyValuePair<string, string> pair in expected.m_customData)
+            {
+                if (!actual.m_customData.TryGetValue(pair.Key, out string value) ||
+                    !string.Equals(value, pair.Value, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 

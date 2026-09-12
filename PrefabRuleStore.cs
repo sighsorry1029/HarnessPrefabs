@@ -417,7 +417,7 @@ internal static class PrefabRuleStore
             "# Full override example:",
             "# - prefab: barrell # Internal prefab name.",
             "#   enabled: true # true exposes it; false hides/overrides it off.",
-            "#   category: Furniture # Hammer tab/category. Harness tabs are admin-only.",
+            "#   category: Furniture # Public category, or one of the three admin-only Harness groups.",
             "#   displayName: Barrel # Optional in-game piece name. Empty uses prefab name.",
             "#   description: \"\" # Optional in-game tooltip/body text.",
             "#   craftingStation: Workbench # None, Workbench, Forge, Stonecutter, BlackForge, etc.",

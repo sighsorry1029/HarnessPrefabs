@@ -10,6 +10,16 @@ namespace HarnessPrefabs;
 [HarmonyPatch]
 internal static class HarnessPrefabsPlacedPiecePatches
 {
+    private static readonly AccessTools.FieldRef<Piece, ZNetView> PieceNview = AccessTools.FieldRefAccess<Piece, ZNetView>("m_nview");
+    private static readonly AccessTools.FieldRef<Door, Animator> DoorAnimator = AccessTools.FieldRefAccess<Door, Animator>("m_animator");
+    private static readonly AccessTools.FieldRef<Door, ZNetView> DoorNview = AccessTools.FieldRefAccess<Door, ZNetView>("m_nview");
+    private static readonly AccessTools.FieldRef<Inventory, int> InventoryWidth = AccessTools.FieldRefAccess<Inventory, int>("m_width");
+    private static readonly AccessTools.FieldRef<Fermenter, float> FermenterUpdateCoverTimer = AccessTools.FieldRefAccess<Fermenter, float>("m_updateCoverTimer");
+    private static readonly AccessTools.FieldRef<Pickable, bool> PickablePicked = AccessTools.FieldRefAccess<Pickable, bool>("m_picked");
+    private static readonly AccessTools.FieldRef<Pickable, ZNetView> PickableNview = AccessTools.FieldRefAccess<Pickable, ZNetView>("m_nview");
+    private static readonly AccessTools.FieldRef<ItemStand, ZNetView> ItemStandNview = AccessTools.FieldRefAccess<ItemStand, ZNetView>("m_nview");
+    private static readonly Action<Container> SaveContainer = AccessTools.MethodDelegate<Action<Container>>(AccessTools.Method(typeof(Container), "Save"));
+
     private static readonly Dictionary<string, Piece.Requirement[]> DefaultResources = new(StringComparer.Ordinal);
     private static readonly HashSet<string> MaterializedPrefabNames = new(StringComparer.Ordinal);
     private static readonly int PieceLayer = LayerMask.NameToLayer("piece");
@@ -71,16 +81,16 @@ internal static class HarnessPrefabsPlacedPiecePatches
         if (!__instance ||
             uid == 0L ||
             !HarnessPrefabsRuntime.IsMaterializedPrefab(__instance) ||
-            !__instance.m_nview ||
-            !__instance.m_nview.IsValid() ||
-            !__instance.m_nview.IsOwner() ||
+            !PieceNview(__instance) ||
+            !PieceNview(__instance).IsValid() ||
+            !PieceNview(__instance).IsOwner() ||
             __instance.GetCreator() != 0L)
         {
             return;
         }
 
         __state = true;
-        ZNetView zNetView = __instance.m_nview;
+        ZNetView zNetView = PieceNview(__instance);
         if (!zNetView.m_persistent)
         {
             zNetView.m_persistent = true;
@@ -119,7 +129,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
 
     [HarmonyPostfix]
     [HarmonyPriority(700)]
-    [HarmonyPatch(typeof(Piece), nameof(Piece.Awake))]
+    [HarmonyPatch(typeof(Piece), "Awake")]
     private static void PieceAwakePostfix(Piece __instance)
     {
         if (!__instance ||
@@ -240,8 +250,8 @@ internal static class HarnessPrefabsPlacedPiecePatches
             zNetView.ClaimOwnership();
         }
 
-        __instance.m_animator.Rebind();
-        __instance.m_animator.Update(0f);
+        DoorAnimator(__instance).Rebind();
+        DoorAnimator(__instance).Update(0f);
     }
 
     private static void ApplyRuntimePatches(Piece piece, PrefabRule rule)
@@ -280,7 +290,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         }
 
         inventory.RemoveAll();
-        container.Save();
+        SaveContainer(container);
     }
 
     private static void ApplyContainerPatches(Piece piece, string prefabName)
@@ -311,8 +321,8 @@ internal static class HarnessPrefabsPlacedPiecePatches
         container.m_height = height;
         if (inventory != null)
         {
-            inventory.m_width = width;
-            inventory.m_height = height;
+            InventoryWidth(inventory) = width;
+            inventory.SetHeight(height);
         }
     }
 
@@ -513,7 +523,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
             fermenter.m_fermentingObject = fermenting;
             fermenter.m_outputPoint = output.transform;
             fermenter.m_tapDelay = sourceFermenter.m_tapDelay;
-            fermenter.m_updateCoverTimer = sourceFermenter.m_updateCoverTimer;
+            FermenterUpdateCoverTimer(fermenter) = FermenterUpdateCoverTimer(sourceFermenter);
             fermenter.m_fermentationDuration =
                 sourceFermenter.m_fermentationDuration * Mathf.Clamp(durationPercent, 1, 100) / 100f;
             fermenter.m_name = sourceFermenter.m_name;
@@ -626,12 +636,12 @@ internal static class HarnessPrefabsPlacedPiecePatches
         Pickable pickable = piece.GetComponent<Pickable>();
         if (pickable)
         {
-            bool wasPicked = pickable.m_picked;
+            bool wasPicked = PickablePicked(pickable);
             bool pickRequested = false;
-            ZNetView zNetView = pickable.m_nview ? pickable.m_nview : pickable.GetComponent<ZNetView>();
+            ZNetView zNetView = PickableNview(pickable) ? PickableNview(pickable) : pickable.GetComponent<ZNetView>();
             if (!wasPicked && zNetView && zNetView.IsValid())
             {
-                zNetView.InvokeRPC(nameof(Pickable.RPC_Pick), 0);
+                zNetView.InvokeRPC("RPC_Pick", 0);
                 pickRequested = true;
             }
 
@@ -650,8 +660,8 @@ internal static class HarnessPrefabsPlacedPiecePatches
                 continue;
             }
 
-            ZNetView zNetView = itemStand.m_nview
-                ? itemStand.m_nview
+            ZNetView zNetView = ItemStandNview(itemStand)
+                ? ItemStandNview(itemStand)
                 : itemStand.m_netViewOverride
                     ? itemStand.m_netViewOverride
                     : itemStand.GetComponent<ZNetView>();
@@ -664,7 +674,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
             try
             {
                 itemStand.m_canBeRemoved = true;
-                zNetView.InvokeRPC(nameof(ItemStand.RPC_DropItem));
+                zNetView.InvokeRPC("RPC_DropItem");
             }
             finally
             {
@@ -743,23 +753,23 @@ internal static class HarnessPrefabsPlacedPiecePatches
 
     private static int? GetDoorState(Door door)
     {
-        if (!door || !door.m_nview || !door.m_nview.IsValid())
+        if (!door || !DoorNview(door) || !DoorNview(door).IsValid())
         {
             return null;
         }
 
-        return door.m_nview.GetZDO().GetInt(ZDOVars.s_state, 0);
+        return DoorNview(door).GetZDO().GetInt(ZDOVars.s_state, 0);
     }
 
     private static bool TryGetZdo(Piece piece, out ZDO zdo)
     {
         zdo = null;
-        if (!piece || !piece.m_nview || !piece.m_nview.IsValid())
+        if (!piece || !PieceNview(piece) || !PieceNview(piece).IsValid())
         {
             return false;
         }
 
-        zdo = piece.m_nview.GetZDO();
+        zdo = PieceNview(piece).GetZDO();
         return zdo != null;
     }
 
@@ -772,6 +782,12 @@ internal static class HarnessPrefabsPlacedPiecePatches
 
 internal sealed class HarnessPrefabsFermenterHoverProxy : MonoBehaviour, Hoverable, Interactable
 {
+    public float GetHoverOffset()
+    {
+        Fermenter fermenter = GetComponentInParent<Fermenter>();
+        return fermenter ? fermenter.GetHoverOffset() : 0f;
+    }
+
     public string GetHoverName()
     {
         Fermenter fermenter = GetComponentInParent<Fermenter>();

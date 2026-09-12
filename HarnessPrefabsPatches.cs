@@ -1,11 +1,14 @@
 using System.Collections.Generic;
 using HarmonyLib;
+using UnityEngine;
 
 namespace HarnessPrefabs;
 
-[HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Awake))]
+[HarmonyPatch(typeof(ZNetScene), "Awake")]
 internal static class ZNetSceneAwakePatch
 {
+    [HarmonyPriority(Priority.Last)]
+    [HarmonyAfter("com.jotunn.jotunn")]
     private static void Postfix(ZNetScene __instance)
     {
         PrefabBuildManager.BeginPrefabEpoch(__instance);
@@ -13,16 +16,24 @@ internal static class ZNetSceneAwakePatch
     }
 }
 
-[HarmonyPatch(typeof(ObjectDB), nameof(ObjectDB.Awake))]
+[HarmonyPatch(typeof(ObjectDB), "Awake")]
 internal static class ObjectDbAwakePatch
 {
+    [HarmonyPriority(Priority.Last)]
+    [HarmonyAfter("com.jotunn.jotunn")]
     private static void Postfix()
     {
         PrefabBuildManager.Refresh("ObjectDB.Awake");
     }
 }
 
-[HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
+[HarmonyPatch(typeof(ZNetScene), "OnDestroy")]
+internal static class ZNetSceneDestroyPatch
+{
+    private static void Postfix(ZNetScene __instance) => PrefabBuildManager.EndPrefabEpoch(__instance);
+}
+
+[HarmonyPatch(typeof(ZoneSystem), "Start")]
 internal static class ZoneSystemStartPatch
 {
     private static void Postfix()
@@ -40,7 +51,7 @@ internal static class PlayerSetLocalPlayerPatch
     }
 }
 
-[HarmonyPatch(typeof(Player), nameof(Player.Update))]
+[HarmonyPatch(typeof(Player), "Update")]
 internal static class PlayerUpdatePatch
 {
     private static void Postfix(Player __instance)
@@ -55,18 +66,18 @@ internal static class PlayerUpdatePatch
 [HarmonyPatch(typeof(Player), "SetupPlacementGhost")]
 internal static class PlayerSetupPlacementGhostPatch
 {
-    private static void Postfix(Player __instance)
+    private static void Postfix(GameObject ___m_placementGhost)
     {
-        PrefabPlacementPatchRegistry.PatchGhost(__instance.m_placementGhost);
+        PrefabPlacementPatchRegistry.PatchGhost(___m_placementGhost);
     }
 }
 
 [HarmonyPatch(typeof(Player), "UpdatePlacementGhost")]
 internal static class PlayerUpdatePlacementGhostPatch
 {
-    private static void Postfix(Player __instance)
+    private static void Postfix(GameObject ___m_placementGhost)
     {
-        PrefabPlacementPatchRegistry.ApplyGhostOffset(__instance.m_placementGhost);
+        PrefabPlacementPatchRegistry.ApplyGhostOffset(___m_placementGhost);
     }
 }
 
