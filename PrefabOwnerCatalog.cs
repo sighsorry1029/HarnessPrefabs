@@ -123,7 +123,8 @@ internal static class PrefabOwnerCatalog
     private static void EnsureModMappingsLoaded()
     {
         List<PluginResourceSnapshot> plugins = GetPluginResources();
-        string signature = BuildSignature(plugins);
+        List<AssetBundle> loadedBundles = AssetBundle.GetAllLoadedAssetBundles().ToList();
+        string signature = BuildSignature(plugins, loadedBundles);
         if (string.Equals(signature, _loadedModSignature, StringComparison.Ordinal))
         {
             return;
@@ -137,7 +138,7 @@ internal static class PrefabOwnerCatalog
             }
 
             ModPrefabOwners.Clear();
-            foreach (AssetBundle assetBundle in AssetBundle.GetAllLoadedAssetBundles())
+            foreach (AssetBundle assetBundle in loadedBundles)
             {
                 string bundleName = assetBundle.name ?? "";
                 if (bundleName.Length == 0)
@@ -268,9 +269,11 @@ internal static class PrefabOwnerCatalog
         return builder.ToString();
     }
 
-    private static string BuildSignature(IEnumerable<PluginResourceSnapshot> plugins)
+    private static string BuildSignature(
+        IEnumerable<PluginResourceSnapshot> plugins,
+        IEnumerable<AssetBundle> loadedBundles)
     {
-        IEnumerable<string> bundleTokens = AssetBundle.GetAllLoadedAssetBundles()
+        IEnumerable<string> bundleTokens = loadedBundles
             .Select(bundle => bundle.name ?? "")
             .Where(name => name.Length > 0)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
