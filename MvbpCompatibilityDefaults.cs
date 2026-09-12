@@ -45,8 +45,6 @@ internal static class MvbpCompatibilityDefaults
         ["TreasureChest_sunkencrypt"] = new() { ContainerWidth = 5, ContainerHeight = 2 },
         ["TreasureChest_trollcave"] = new() { ContainerWidth = 6, ContainerHeight = 3 },
         ["loot_chest_stone"] = new() { ContainerWidth = 5, ContainerHeight = 2 },
-        ["Trailership"] = new() { ContainerWidth = 6, ContainerHeight = 4 },
-
         ["ancient_skull"] = new() { SpawnOnDestroyed = "sfx_rock_destroyed" },
         ["flying_core"] = new() { SpawnOnDestroyed = "fx_crystal_destruction" },
         ["rock_mistlands2"] = new() { SpawnOnDestroyed = "sfx_rock_destroyed" }

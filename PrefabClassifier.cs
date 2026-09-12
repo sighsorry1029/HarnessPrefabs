@@ -112,6 +112,7 @@ internal static class PrefabClassifier
         "Ravens",
         "SunkenKit_int_towerwall_LOD",
         "TERRAIN_TEST",
+        "Trailership",
         "TreasureChest_blackforest",
         "TreasureChest_forestcrypt",
         "TreasureChest_forestcrypt_hildir",

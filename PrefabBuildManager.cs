@@ -341,7 +341,7 @@ internal static class PrefabBuildManager
         piece.m_inCeilingOnly = false;
         piece.m_notOnFloor = false;
         piece.m_onlyInTeleportArea = false;
-        ApplyPrefabPlacementProfile(prefab, piece);
+        piece.m_allowRotatedOverlap = true;
         piece.m_allowedInDungeons = rule.AllowedInDungeons;
         piece.m_clipEverything = rule.ClipEverything;
         piece.m_clipGround = rule.ClipGround;
@@ -359,22 +359,6 @@ internal static class PrefabBuildManager
         PrefabIconRenderer.QueueIcon(piece);
 
         return piece;
-    }
-
-    private static void ApplyPrefabPlacementProfile(GameObject prefab, Piece piece)
-    {
-        piece.m_allowRotatedOverlap = true;
-
-        string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(prefab ? prefab.name : "");
-        if (!prefabName.Equals("Trailership", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Piece vikingShipPiece = ZNetScene.instance ? ZNetScene.instance.GetPrefab("VikingShip")?.GetComponent<Piece>() : null;
-        piece.m_waterPiece = vikingShipPiece ? vikingShipPiece.m_waterPiece : true;
-        piece.m_noClipping = vikingShipPiece ? vikingShipPiece.m_noClipping : true;
-        piece.m_allowRotatedOverlap = vikingShipPiece ? vikingShipPiece.m_allowRotatedOverlap : false;
     }
 
     private static bool TryResolveRequirements(

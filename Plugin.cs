@@ -53,7 +53,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
     internal static bool UnsafeBedPatchesEnabled => EnableUnsafeBedPatches.Value == Toggle.On;
     internal static bool ArmorStandEquipmentSwapEnabled => EnableArmorStandEquipmentSwap.Value == Toggle.On;
     internal static int FermenterPatchDurationPercent => Math.Min(100, Math.Max(0, UnsafeFermenterPatchDurationPercent.Value));
-    internal static float TrailershipSpeedRatio => Mathf.Clamp(TrailershipVikingShipSpeedRatio == null ? 0.66f : TrailershipVikingShipSpeedRatio.Value, 0.5f, 1f);
 
     internal enum Toggle
     {
@@ -63,7 +62,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 
     private static ConfigEntry<Toggle> LockConfiguration = null!;
     private static ConfigEntry<Toggle> ShowHarnessPrefabTabs = null!;
-    private static ConfigEntry<float> TrailershipVikingShipSpeedRatio = null!;
     private static ConfigEntry<Toggle> EnableUnsafeBedPatches = null!;
     private static ConfigEntry<Toggle> EnableArmorStandEquipmentSwap = null!;
     private static ConfigEntry<int> UnsafeFermenterPatchDurationPercent = null!;
@@ -80,14 +78,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
             LockConfiguration = BindSynced("1 - General", "Lock Configuration", Toggle.On, "If on, prefab policy is controlled by the server and can only be changed by admins.");
             ShowHarnessPrefabTabs = BindSynced("1 - General", "Show Harness Tabs", Toggle.On, "If on, Harness Hammer tabs are visible to admin clients while Valheim debugmode is enabled. If off, Harness tabs stay hidden even in debugmode.", synchronizedSetting: false);
             ShowHarnessPrefabTabs.SettingChanged += OnHarnessHammerVisibilityChanged;
-            TrailershipVikingShipSpeedRatio = BindSynced(
-                "2 - Prefab Tweaks",
-                "Trailership VikingShip Speed Ratio",
-                0.66f,
-                new ConfigDescription(
-                    "Controls Trailership movement speed relative to VikingShip. 0.5 is half speed, 1.0 matches VikingShip.",
-                    new AcceptableValueRange<float>(0.5f, 1f)));
-            TrailershipVikingShipSpeedRatio.SettingChanged += OnTrailershipSpeedRatioChanged;
             EnableUnsafeBedPatches = BindSynced("2 - Prefab Tweaks", "Enable Bed Patches", Toggle.On, "If on, player-built MVBP bed prefabs get Bed components and spawn points. Unsafe: disabling the mod later can affect spawn points.");
             EnableArmorStandEquipmentSwap = BindSynced("2 - Prefab Tweaks", "Enable Armor Stand Equipment Swap", Toggle.On, "If on, Left/Right Alt+Use swaps the equipped armor and drawn or sheathed hand set with player-built ArmorStand, ArmorStand_Female, or ArmorStand_Male. The base stand uses its back slots; female and male stands always use their hand slots and leave their back slots unchanged. The player's drawn or sheathed hand state is preserved. Displayable Utility items are swapped when safe; incompatible Utility items stay unchanged. Turn this off when another mod handles ArmorStand interaction.");
             UnsafeFermenterPatchDurationPercent = BindSynced(
@@ -139,10 +129,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         {
             ShowHarnessPrefabTabs.SettingChanged -= OnHarnessHammerVisibilityChanged;
         }
-        if (TrailershipVikingShipSpeedRatio != null)
-        {
-            TrailershipVikingShipSpeedRatio.SettingChanged -= OnTrailershipSpeedRatioChanged;
-        }
         PrefabLocalizationOverrideManager.Dispose();
         SyncedRules.ValueChanged -= OnSyncedRulesChanged;
         SyncedConfig.SourceOfTruthChanged -= OnSourceOfTruthChanged;
@@ -159,14 +145,6 @@ public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
         if (!_reloadingConfig)
         {
             PrefabBuildManager.RefreshIfHarnessHammerVisibilityChanged();
-        }
-    }
-
-    private void OnTrailershipSpeedRatioChanged(object sender, EventArgs e)
-    {
-        if (!_reloadingConfig)
-        {
-            PrefabBuildManager.RefreshFromCachedRules("Trailership speed ratio changed");
         }
     }
 

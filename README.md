@@ -10,9 +10,6 @@ Swap equipment with the vanilla armor stand and the additional armor stands unlo
 ![](https://i.ibb.co/XxXky8Kb/Screenshot-2026-06-24-230139.png) <br>
 Dvergr barrel(enhanced lod) can be used as a fermenter. Fermenting time is configurable.
 
-![](https://i.ibb.co/MkQQPHqH/Screenshot-2026-06-24-230129.png) <br>
-Trailership can be used by default. It would be available at plains. It is slightly slower(configurable) then longship but has bigger containersize.
-
 ## Why Use It
 
 - Open useful vanilla and modded prefabs without shipping another hard-coded prefab dump.
@@ -176,12 +173,13 @@ For prefabs with awkward or sparse colliders, HarnessPrefabs applies placement-o
 
 The `2 - Prefab Tweaks` config section contains optional synchronized tweaks:
 
-- `Trailership VikingShip Speed Ratio`: scales Trailership movement relative to VikingShip. Default is `0.66`; accepted range is `0.5` to `1.0`.
 - `Enable Armor Stand Equipment Swap`: on by default. Left or Right Alt+Use swaps the player's Helmet, Chest, Legs, Shoulder, and drawn or sheathed hand set with a player-built `ArmorStand`, `ArmorStand_Female`, or `ArmorStand_Male`; creator-less location and console-spawned stands keep their vanilla interaction. The game's `AltPlace`/Shift input no longer triggers the swap. A Utility item is included only when both sides of that Utility exchange are safe; displayable items such as `BeltStrength` can swap, while incompatible items such as `Wishbone` or a demister stay equipped or attached and the rest of the set still swaps. One-handed pairs and two-handed weapons are validated and moved as one hand-set transaction. A sheathed hand set remains sheathed after the swap; temporary states that mix drawn and hidden hand items must finish first. The base `ArmorStand` always swaps its shield and weapon back slots. The female and male stands always swap their hand slots and leave their back slots unchanged, regardless of whether the player's hand set is drawn or sheathed. If the player has no hand equipment, equipment retrieved from the selected stand slots is drawn. Female and male hand-slot arrangements must match the display side Valheim allows for each item, including item-specific overrides; arbitrary reversed display-only arrangements cause the set swap to be rejected.
 - `Enable Bed Patches`: on by default. Adds bed/spawn behavior to supported MVBP-style bed prefabs.
 - `Fermenter Patch Duration Percent`: defaults to `70`. `0` disables the player-built `dvergrprops_barrel` fermenter patch; `1` to `100` enables it and sets fermentation duration as a percentage of the vanilla fermenter. The barrel appears in the `Crafting` tab by default. Natural instances without a creator remain ordinary barrels.
 
 Bed and fermenter tweaks are intentionally marked unsafe because disabling the mod later can affect placed-world state such as spawn points or fermenting contents.
+
+`Trailership` is excluded from both public and admin/debug build lists. HarnessPrefabs no longer loads, exposes, or modifies the ship and ignores YAML entries that try to enable it.
 
 Turn `Enable Armor Stand Equipment Swap` off when another mod, such as `ZenItemStands` or `Wardrobe`, should handle ArmorStand interaction instead. HarnessPrefabs does not automatically enable or disable this feature based on installed mods.
 

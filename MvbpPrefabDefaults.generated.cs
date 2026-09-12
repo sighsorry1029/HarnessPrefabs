@@ -563,7 +563,6 @@ internal static partial class MvbpPrefabDefaults
         ["tarlump1_frac"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "Tar:50", true, false, false, "Crystallized tar", null, "None"),
         ["TESTTOWER"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "", true, false, false, null, null, "None"),
         ["trader_wagon_destructable"] = new MvbpPrefabDefault(true, false, "Furniture", "BlackForge", "FineWood:32", true, false, false, null, null, "None"),
-        ["Trailership"] = new MvbpPrefabDefault(true, false, "Misc", "Workbench", "BlackMetal:5;LoxPelt:10;FineWood:20;IronNails:40", false, false, false, "Trader ship", null, "Ship"),
         ["TreasureChest_ashland_stone"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "", false, false, false, null, null, "Chest"),
         ["TreasureChest_charredfortress"] = new MvbpPrefabDefault(false, false, "CreatorShop", "None", "", false, false, false, null, null, "Chest"),
         ["TreasureChest_dvergr_loose_stone"] = new MvbpPrefabDefault(true, false, "Furniture", "Stonecutter", "BlackMarble:10", false, false, false, "Black marble chest", null, "Chest"),
