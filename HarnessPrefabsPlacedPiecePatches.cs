@@ -291,7 +291,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
             return;
         }
 
-        MarkZdoFields(zdo, ZdoHasFieldsContainer);
+        MarkZdoField(zdo, ZdoHasFieldsContainer);
         zdo.Set(ZdoContainerCheckGuardStone, true);
         container.m_checkGuardStone = true;
 
@@ -303,7 +303,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         Inventory inventory = container.GetInventory();
         zdo.Set(ZdoContainerWidth, width);
         zdo.Set(ZdoContainerHeight, height);
-        MarkZdoFields(zdo, ZdoHasFieldsInventory);
+        MarkZdoField(zdo, ZdoHasFieldsInventory);
         zdo.Set(ZdoInventoryWidth, width);
         zdo.Set(ZdoInventoryHeight, height);
 
@@ -325,7 +325,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         }
 
         const float timeout = 1E+30f;
-        MarkZdoFields(zdo, ZdoHasFieldsTimedDestruction);
+        MarkZdoField(zdo, ZdoHasFieldsTimedDestruction);
         zdo.Set(ZdoTimedDestructionTimeout, timeout);
         timedDestruction.m_timeout = timeout;
     }
@@ -349,7 +349,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
             return;
         }
 
-        MarkZdoFields(zdo, ZdoHasFieldsDestructible);
+        MarkZdoField(zdo, ZdoHasFieldsDestructible);
         zdo.Set(ZdoDestructibleSpawnWhenDestroyed, spawnOnDestroyed);
         destructible.m_spawnWhenDestroyed = spawnPrefab;
     }
@@ -370,7 +370,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
 
         door.m_canNotBeClosed = false;
         door.m_checkGuardStone = true;
-        MarkZdoFields(zdo, ZdoHasFieldsDoor);
+        MarkZdoField(zdo, ZdoHasFieldsDoor);
         zdo.Set(ZdoDoorCanNotBeClosed, false);
         zdo.Set(ZdoDoorCheckGuardStone, true);
     }
@@ -763,13 +763,10 @@ internal static class HarnessPrefabsPlacedPiecePatches
         return zdo != null;
     }
 
-    private static void MarkZdoFields(ZDO zdo, params string[] fieldFlags)
+    private static void MarkZdoField(ZDO zdo, string fieldFlag)
     {
         zdo.Set(ZdoHasFields, true);
-        foreach (string fieldFlag in fieldFlags)
-        {
-            zdo.Set(fieldFlag, true);
-        }
+        zdo.Set(fieldFlag, true);
     }
 }
 
