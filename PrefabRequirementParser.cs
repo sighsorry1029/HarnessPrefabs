@@ -54,28 +54,15 @@ internal static class PrefabRequirementParser
     private static PrefabRequirement ParseOne(string entry)
     {
         int separator = entry.IndexOfAny(new[] { ',', ':', '=' });
-        if (separator < 0)
-        {
-            string singleItem = entry.Trim();
-            if (singleItem.Length == 0)
-            {
-                throw new FormatException("Prefab requirement item names cannot be empty.");
-            }
-
-            return new PrefabRequirement
-            {
-                Item = singleItem,
-                Amount = 1
-            };
-        }
-
-        string item = entry.Substring(0, separator).Trim();
+        string item = (separator < 0 ? entry : entry.Substring(0, separator)).Trim();
         if (item.Length == 0)
         {
             throw new FormatException("Prefab requirement item names cannot be empty.");
         }
 
-        if (!int.TryParse(entry.Substring(separator + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int amount) || amount < 1)
+        int amount = 1;
+        if (separator >= 0 &&
+            (!int.TryParse(entry.Substring(separator + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out amount) || amount < 1))
         {
             throw new FormatException($"Prefab requirement '{item}' must have a positive integer amount.");
         }
