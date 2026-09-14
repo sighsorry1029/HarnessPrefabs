@@ -583,7 +583,7 @@ internal static class PrefabBuildManager
         return itemDrop?.m_itemData?.m_shared?.m_buildPieces;
     }
 
-    private static bool IsHammerPieceTable(PieceTable table)
+    internal static bool IsHammerPieceTable(PieceTable table)
     {
         PieceTable hammer = GetHammerPieceTable();
         return table && hammer && ReferenceEquals(table, hammer);

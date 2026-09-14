@@ -88,4 +88,11 @@ internal static class PieceTableUpdateAvailablePatch
     {
         PrefabBuildManager.PreparePieceTableForUpdate(__instance, knownRecipies);
     }
+
+    private static void Postfix(PieceTable __instance, Player player, List<List<Piece>> ___m_availablePiecesByCategory)
+    {
+        if (player && player == Player.m_localPlayer &&
+            HarnessPrefabsPlugin.HarnessHammerTabsEnabled && PrefabBuildManager.IsHammerPieceTable(__instance))
+            PrefabCategoryRegistry.AddAdminSelectionPieces(___m_availablePiecesByCategory);
+    }
 }

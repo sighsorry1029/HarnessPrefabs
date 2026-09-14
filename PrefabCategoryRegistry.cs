@@ -23,6 +23,7 @@ internal static class PrefabCategoryRegistry
     };
     private static readonly Dictionary<Piece, string> Categories = new();
     private static readonly List<Piece> OrderedPieces = new();
+    private static List<List<Piece>> _selectionPieces;
     private static readonly Dictionary<string, int> TagIds = new(StringComparer.Ordinal)
     {
         [BuildCategories.HarnessNature] = 1000000,
@@ -42,8 +43,36 @@ internal static class PrefabCategoryRegistry
 
     public static void Clear()
     {
+        // The native table owns these lists. Remove only our admin entries before
+        // losing their identities on rule refresh, world exit, or plugin disposal.
+        if (_selectionPieces != null)
+        {
+            foreach (List<Piece> pieces in _selectionPieces)
+                for (int i = pieces.Count - 1; i >= 0; i--)
+                    if (Categories.TryGetValue(pieces[i], out string category) &&
+                        BuildCategories.IsAdminCategory(category))
+                        pieces.RemoveAt(i);
+            _selectionPieces = null;
+        }
         Categories.Clear();
         OrderedPieces.Clear();
+    }
+
+    internal static void AddAdminSelectionPieces(List<List<Piece>> piecesByCategory)
+    {
+        // Player.SetSelectedPiece and placement use this index, not IPieceList.
+        // Keep the native display sets (m_enabledPieces/m_availablePieces) untouched
+        // so Categories, Materials, Recent, and Favorites still exclude admin pieces.
+        _selectionPieces = piecesByCategory;
+        foreach (Piece piece in OrderedPieces)
+        {
+            if (!piece || !Categories.TryGetValue(piece, out string category) ||
+                !BuildCategories.IsAdminCategory(category)) continue;
+            int index = (int)piece.m_category;
+            // UpdateAvailable rebuilds these lists, and OrderedPieces is unique.
+            if (index >= 0 && index < piecesByCategory.Count)
+                piecesByCategory[index].Add(piece);
+        }
     }
 
     public static void Dispose()
@@ -109,6 +138,11 @@ internal static class PrefabCategoryRegistry
         button.name = "HarnessPrefabsTab";
         button.transform.SetAsLastSibling();
         button.onClick = new Button.ButtonClickedEvent();
+        // The source tab may be selected. Reset only the clone; TabHandler owns
+        // subsequent selection changes, including keyboard/gamepad navigation.
+        button.interactable = true;
+        Transform selected = button.transform.Find("Selected");
+        if (selected) selected.gameObject.SetActive(false);
         foreach (TMP_Text label in button.GetComponentsInChildren<TMP_Text>(true))
             label.text = pieceList.DisplayName;
 
