@@ -219,11 +219,6 @@ internal static class PrefabBuildManager
                 continue;
             }
 
-            PrefabPlacementPatchRegistry.Set(
-                discovery.Name,
-                MvbpPrefabDefaults.NeedsPlacementPatch(discovery.Name),
-                MvbpCompatibilityDefaults.GetPlacementOffset(discovery.Name));
-
             if (!discovery.Prefab)
             {
                 continue;
@@ -258,6 +253,15 @@ internal static class PrefabBuildManager
             return false;
         }
 
+        // Piece creator state and native placement/removal use the root ZNetView.
+        // A child view cannot persist and restore this root as a build piece.
+        if (!prefab.GetComponent<ZNetView>())
+        {
+            HarnessPrefabsPlugin.Log.LogWarning(
+                $"Prefab '{prefab.name}' has no root ZNetView; build registration skipped to avoid unsaved or unsynchronized pieces.");
+            return false;
+        }
+
         if (!TryResolveRequirements(prefab.name, rule.Requirements, out Requirement[] resources) ||
             !TryResolveCraftingStation(prefab.name, rule.CraftingStation, out CraftingStation craftingStation))
         {
@@ -270,6 +274,11 @@ internal static class PrefabBuildManager
         {
             return false;
         }
+
+        PrefabPlacementPatchRegistry.Set(
+            prefab.name,
+            MvbpPrefabDefaults.NeedsPlacementPatch(prefab.name),
+            MvbpCompatibilityDefaults.GetPlacementOffset(prefab.name));
 
         // Materialize on every peer, including headless servers. Admin pieces stay
         // outside native lists and are selected only through HarnessPieceList.
@@ -296,6 +305,9 @@ internal static class PrefabBuildManager
         {
             piece = prefab.AddComponent<Piece>();
             piece.m_canBeRemoved = false;
+            // Keep natural instances out of AI target selection without disabling
+            // the target flags on player-built instances or existing native Pieces.
+            piece.m_targetNonPlayerBuilt = false;
         }
 
         HarnessPrefabsPlacedPiecePatches.RegisterMaterializedPrefab(prefab, piece.m_resources);

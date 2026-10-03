@@ -1,5 +1,6 @@
 | `Version` | `Update Notes` |
 |-----------|----------------|
+| 1.1.3 | - Prevent newly injected Piece components from making natural instances AI targets while preserving player-built and existing native Piece targeting.<br>- Skip build registration for prefabs without a root ZNetView and report the prefab name in a warning.<br>- Register placement adjustments only after successful piece preparation.<br>- Update the BepInExPack dependency to 5.4.2351. |
 | 1.1.2 | - Fix HarnessPrefabs tab entries selecting the previously selected vanilla piece instead of the clicked prefab.<br>- Initialize the HarnessPrefabs tab as inactive so its yellow selected state appears only while that tab is active. |
 | 1.1.1 | - Generate and cache missing icons per prefab so visually distinct chests, black-marble pieces, and other public pieces no longer share a fallback snapshot.<br>- Remove the broken `Trailership` from public and admin/debug discovery together with its build defaults, speed setting, placement profile, and runtime fixups.<br>- Simplify prefab requirement parsing, owner-bundle lookup, and placed-piece ZDO marker handling while preserving their external formats and policies. |
 | 1.1.0 | - Fix new nature prefabs being available to non-admin clients. |

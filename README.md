@@ -59,6 +59,10 @@ The client-side `Show Harness Tabs` config can hide the entire HarnessPrefabs se
 
 Known MVBP public pieces default to public access. Other discovered prefabs default to the Harness Nature, Structures, or Props admin groups unless an explicit YAML policy assigns a public category.
 
+Both enabled public and admin prefabs receive a `Piece` component when needed, even while the admin tab is hidden. A root `ZNetView` is required for build registration; a missing view or one only on a child causes the prefab to be skipped with a warning. Discovery/reference YAML can still list such a prefab. Disabling a rule stops new build-menu exposure but does not remove an already added component.
+
+Newly added `Piece` components exclude instances without a player creator from AI target selection while retaining the target flags for player-built instances. Existing native `Piece` target settings are preserved. Shared prefab changes, including supported collider and snap-point fixes, still apply; this does not make natural objects completely unaffected by the mod.
+
 General classification uses prefab components and names:
 
 - `Harness Nature`: plants, pickables, trees, logs, rocks, ore rocks, crops, and natural static prefabs.
