@@ -1,8 +1,65 @@
+using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
+using MagicaCloth2;
 using UnityEngine;
 
 namespace HarnessPrefabs;
+
+[HarmonyPatch(typeof(VisEquipment), "SetupCloth", typeof(GameObject))]
+internal static class ArmorStandSetupClothPatch
+{
+    [HarmonyPriority(Priority.Last)]
+    private static void Prefix(VisEquipment __instance)
+    {
+        if (!__instance.m_isArmorStand || __instance.m_clothColliders == null || __instance.m_clothColliders.Count == 0)
+            return;
+
+        ArmorStand stand = __instance.GetComponentInParent<ArmorStand>(true);
+        if (!stand || stand.m_visEquipment != __instance)
+            return;
+
+        string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(stand.gameObject.name);
+        if (prefabName != "ArmorStand_Male" && prefabName != "ArmorStand_Female")
+            return;
+
+        List<ColliderComponent>? filtered = FilterClothColliders(__instance.m_clothColliders);
+        if (filtered == null)
+            return;
+
+        int removed = __instance.m_clothColliders.Count - filtered.Count;
+        __instance.m_clothColliders = filtered;
+        HarnessPrefabsPlugin.Log.LogWarning($"Ignored {removed} incompatible cloth collider reference(s) on {prefabName} before cloth initialization.");
+    }
+
+    // The 1.0.17 male/female assets serialize Unity CapsuleColliders into a
+    // List<MagicaCloth2.ColliderComponent>. Read as object so the CLR checks the
+    // actual type before MagicaCloth can dispatch a method on an invalid object.
+    // Nulls are accepted by MagicaCloth. Leave them and all valid entries intact.
+    // Return null when unchanged; never mutate a list already shared with a cloth.
+    private static List<ColliderComponent>? FilterClothColliders(IList colliders)
+    {
+        List<ColliderComponent>? filtered = null;
+        for (int i = 0; i < colliders.Count; i++)
+        {
+            object? candidate = colliders[i];
+            if (candidate != null && candidate is not ColliderComponent)
+            {
+                if (filtered == null)
+                {
+                    filtered = new List<ColliderComponent>(colliders.Count - 1);
+                    for (int j = 0; j < i; j++)
+                        filtered.Add((ColliderComponent)colliders[j]!);
+                }
+            }
+            else
+            {
+                filtered?.Add((ColliderComponent)candidate!);
+            }
+        }
+        return filtered;
+    }
+}
 
 [HarmonyPatch(typeof(ZNetScene), "Awake")]
 internal static class ZNetSceneAwakePatch

@@ -9,6 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="MetadataChecks/**/*.cs" />
+    <!-- The isolated .NET 9 runner needs modern detours; this is not a mod dependency. -->
+    <PackageReference Include="HarmonyX" Version="2.16.0" />
     <Reference Include="assembly_valheim"><HintPath>$(OriginalManagedPath)\assembly_valheim.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="assembly_utils"><HintPath>$(OriginalManagedPath)\assembly_utils.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(OriginalManagedPath)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>

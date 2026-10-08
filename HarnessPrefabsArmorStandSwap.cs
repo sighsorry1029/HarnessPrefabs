@@ -1601,16 +1601,34 @@ internal static class HarnessPrefabsArmorStandSwap
             return false;
         }
 
-        if (expectedRight != null && !player.EquipItem(expectedRight, triggerEquipEffects: false))
+        if (expectedRight != null)
         {
-            error = "Could not equip the armor stand's right-hand item.";
-            return false;
+            if (!ReferenceEquals(HumanoidRightItem(player), expectedRight))
+            {
+                player.EquipItem(expectedRight, triggerEquipEffects: false);
+            }
+
+            if (!ReferenceEquals(HumanoidRightItem(player), expectedRight))
+            {
+                error = "Could not equip the armor stand's right-hand item.";
+                return false;
+            }
         }
 
-        if (expectedLeft != null && !player.EquipItem(expectedLeft, triggerEquipEffects: false))
+        if (expectedLeft != null)
         {
-            error = "Could not equip the armor stand's left-hand item.";
-            return false;
+            // Equipping a weapon can synchronously auto-equip its shield through
+            // another mod. Native EquipItem returns false for an already equipped item.
+            if (!ReferenceEquals(HumanoidLeftItem(player), expectedLeft))
+            {
+                player.EquipItem(expectedLeft, triggerEquipEffects: false);
+            }
+
+            if (!ReferenceEquals(HumanoidLeftItem(player), expectedLeft))
+            {
+                error = "Could not equip the armor stand's left-hand item.";
+                return false;
+            }
         }
 
         if (!HandStateMatches(player, expectedLeft, expectedRight))

@@ -80,6 +80,10 @@
         <Reference Include="assembly_valheim">
             <HintPath>$(CorlibPath)\assembly_valheim.dll</HintPath>
         </Reference>
+        <Reference Include="MagicaClothV2">
+            <HintPath>$(CorlibPath)\MagicaClothV2.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
         <Reference Include="BepInEx">
             <HintPath>$(BepInExPath)\core\BepInEx.dll</HintPath>
         </Reference>

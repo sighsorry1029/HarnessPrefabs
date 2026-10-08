@@ -15,7 +15,7 @@ namespace HarnessPrefabs;
 public sealed class HarnessPrefabsPlugin : BaseUnityPlugin
 {
     internal const string ModName = "HarnessPrefabs";
-    internal const string ModVersion = "1.1.3";
+    internal const string ModVersion = "1.1.4";
     internal const string Author = "sighsorry";
     internal const string ModGuid = "sighsorry.valheim.harnessprefabs";
     internal const string MoreVanillaBuildPrefabsGuid = "Searica.Valheim.MoreVanillaBuildPrefabs";
