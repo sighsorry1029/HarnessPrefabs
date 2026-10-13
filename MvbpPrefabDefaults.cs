@@ -113,6 +113,14 @@ internal static partial class MvbpPrefabDefaults
             CanBeRemoved = ResolveCanBeRemoved(seed),
             Components = NormalizeComponents(discovery.Components)
         };
+        // Reviewed Ashlands labels are useful in the admin list too. Keep access,
+        // costs and unnamed admin defaults unchanged; YAML overrides still win.
+        if (access == PrefabAccess.Admin &&
+            (discovery.Name.StartsWith("Ashlands_", StringComparison.Ordinal) || discovery.Name == "Ashland_Stair"))
+        {
+            rule.DisplayName = seed.DisplayName ?? "";
+            rule.Description = seed.Description ?? "";
+        }
         return true;
     }
 
