@@ -262,6 +262,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         ApplyTimedDestructionPatch(piece);
         ApplySpawnOnDestroyedPatch(piece, prefabName);
         ApplyDoorPatches(piece);
+        ApplyBrazierWarmthPatch(piece, prefabName);
 
         if (MvbpCompatibilityDefaults.HasPlayerBasePatch(prefabName))
         {
@@ -383,6 +384,20 @@ internal static class HarnessPrefabsPlacedPiecePatches
         MarkZdoField(zdo, ZdoHasFieldsDoor);
         zdo.Set(ZdoDoorCanNotBeClosed, false);
         zdo.Set(ZdoDoorCheckGuardStone, true);
+    }
+
+    private static void ApplyBrazierWarmthPatch(Piece piece, string prefabName)
+    {
+        if (prefabName is not ("MountainKit_brazier" or "MountainKit_brazier_blue" or "MountainKit_brazier_purple"))
+            return;
+
+        // These location prefabs have a 0.5m warmth trigger; the purple variant
+        // also uses the piece layer. Match the native standing brazier only on
+        // player-built instances, without changing comfort or writing ZDO fields.
+        Transform warmth = piece.transform.Find("_enabled_high/FireWarmth");
+        if (!warmth || !warmth.TryGetComponent(out SphereCollider collider)) return;
+        collider.radius = Mathf.Max(collider.radius, 5f);
+        if (CharacterTriggerLayer >= 0) warmth.gameObject.layer = CharacterTriggerLayer;
     }
 
     private static void ApplyPlayerBasePatch(GameObject gameObject)
