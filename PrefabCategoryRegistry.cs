@@ -22,6 +22,7 @@ internal static class PrefabCategoryRegistry
         BuildCategories.HarnessProps
     };
     private static readonly Dictionary<Piece, string> Categories = new();
+    private static readonly Dictionary<Piece, Piece.UsageTagFlags> AddedUsage = new();
     private static readonly List<Piece> OrderedPieces = new();
     private static List<List<Piece>> _selectionPieces;
     private static readonly Dictionary<string, int> TagIds = new(StringComparer.Ordinal)
@@ -54,6 +55,11 @@ internal static class PrefabCategoryRegistry
                         pieces.RemoveAt(i);
             _selectionPieces = null;
         }
+        // Remove only our additions; preserve original tags and unrelated changes
+        // made by other mods. Recalculate after YAML refresh and world re-entry.
+        foreach (var entry in AddedUsage)
+            if (entry.Key) entry.Key.m_usage &= ~entry.Value;
+        AddedUsage.Clear();
         Categories.Clear();
         OrderedPieces.Clear();
     }
@@ -103,7 +109,42 @@ internal static class PrefabCategoryRegistry
             "Meads" => Piece.PieceCategory.Meads,
             _ => Piece.PieceCategory.Misc
         };
+        if (AddedUsage.TryGetValue(piece, out Piece.UsageTagFlags previous))
+            piece.m_usage &= ~previous;
+        Piece.UsageTagFlags original = piece.m_usage;
+        if (!BuildCategories.IsAdminCategory(name))
+            piece.m_usage |= GetPublicUsage(piece);
         if (piece.m_usage == 0) piece.m_usage = Piece.UsageTagFlags.Misc;
+        AddedUsage[piece] = piece.m_usage & ~original;
+    }
+
+    private static Piece.UsageTagFlags GetPublicUsage(Piece piece)
+    {
+        // Native Categories filters use m_usage rather than m_category. Run only
+        // during registration/refresh, never while drawing the menu each frame.
+        Piece.UsageTagFlags usage = piece.m_category switch
+        {
+            Piece.PieceCategory.Crafting => Piece.UsageTagFlags.Crafting,
+            Piece.PieceCategory.BuildingWorkbench or Piece.PieceCategory.BuildingStonecutter => Piece.UsageTagFlags.Building,
+            Piece.PieceCategory.Furniture => Piece.UsageTagFlags.Furniture,
+            Piece.PieceCategory.Feasts => Piece.UsageTagFlags.Feasts,
+            Piece.PieceCategory.Food => Piece.UsageTagFlags.Food,
+            Piece.PieceCategory.Meads => Piece.UsageTagFlags.Meads,
+            Piece.PieceCategory.Misc => Piece.UsageTagFlags.Misc,
+            _ => 0
+        };
+        if (piece.GetComponentInChildren<Container>(true)) usage |= Piece.UsageTagFlags.Storage;
+        if (piece.GetComponent<Door>()) usage |= Piece.UsageTagFlags.Doors;
+        if (piece.GetComponent<TeleportWorld>() || piece.GetComponent<Ship>() || piece.GetComponent<Vagon>())
+            usage |= Piece.UsageTagFlags.Transport;
+        if (piece.GetComponent<ArmorStand>()) usage |= Piece.UsageTagFlags.Decor;
+
+        string prefabName = HarnessPrefabsRuntime.NormalizePrefabName(piece.name);
+        string group = MvbpPrefabDefaults.GetPieceGroup(prefabName);
+        if (piece.GetComponent<Fireplace>() || piece.GetComponentInChildren<Demister>(true) ||
+            group is "Fire" or "Brazier" or "Torch" || prefabName == "MountainKit_brazier_purple")
+            usage |= Piece.UsageTagFlags.Lighting;
+        return usage;
     }
 
     public static void RefreshUi()
