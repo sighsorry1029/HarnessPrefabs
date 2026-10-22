@@ -432,6 +432,41 @@ internal static class PrefabMvbpFixups
                     new Vector3(-1f, 0.5f, 1f),
                     new Vector3(1f, 0.5f, 1f),
                     Vector3.zero);
+            case "Ashlands_Fortress_Gate":
+                return AddSnapPoints(prefab,
+                    Vector3.zero,
+                    new Vector3(-2f, 0f, 0f),
+                    new Vector3(2f, 0f, 0f),
+                    new Vector3(-2f, 0f, -1f),
+                    new Vector3(-2f, 0f, 1f),
+                    new Vector3(2f, 0f, -1f),
+                    new Vector3(2f, 0f, 1f));
+            case "Ashlands_Fortress_Gate_Door":
+                return AddSnapPoints(prefab,
+                    Vector3.zero,
+                    new Vector3(-2f, 0f, 0f),
+                    new Vector3(2f, 0f, 0f),
+                    new Vector3(-2f, 0f, -0.5f),
+                    new Vector3(-2f, 0f, 0.5f),
+                    new Vector3(2f, 0f, -0.5f),
+                    new Vector3(2f, 0f, 0.5f));
+            case "Ashlands_PillarBase3_double":
+                return AddSnapPoints(prefab,
+                    new Vector3(-0.5f, 0f, -0.5f),
+                    new Vector3(-0.5f, 0f, 0.5f),
+                    new Vector3(0.5f, 0f, -0.5f),
+                    new Vector3(0.5f, 0f, 0.5f));
+            case "Ashlands_Ruins_Floor_1point5x1point5":
+            case "Ashlands_Ruins_Floor_1point5x1point5_broken":
+                return AddSnapPoints(prefab,
+                    new Vector3(-0.75f, -0.25f, -0.75f),
+                    new Vector3(-0.75f, -0.25f, 0.75f),
+                    new Vector3(0.75f, -0.25f, -0.75f),
+                    new Vector3(0.75f, -0.25f, 0.75f),
+                    new Vector3(-0.75f, 0.25f, -0.75f),
+                    new Vector3(-0.75f, 0.25f, 0.75f),
+                    new Vector3(0.75f, 0.25f, -0.75f),
+                    new Vector3(0.75f, 0.25f, 0.75f));
             case "Ashlands_Wall_2x2":
             case "Ashlands_Wall_2x2_edge2":
             case "Ashlands_Wall_2x2_top":
