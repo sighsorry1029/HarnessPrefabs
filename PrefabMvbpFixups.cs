@@ -413,6 +413,17 @@ internal static class PrefabMvbpFixups
             case "dvergrprops_stool":
                 return AddChair(prefab, new Vector3(0f, -0.1f, 0f));
 
+            case "Ashlands_Arch2":
+                // The original mesh/collider is scaled in X/Y, but its snaps are not.
+                return MoveSnapPoints(prefab,
+                    ("_snappoint", new Vector3(0f, 5.58f, -0.9824929f)),
+                    ("_snappoint (1)", new Vector3(0f, 5.58f, 0.9824929f)),
+                    ("_snappoint (2)", new Vector3(4.151907f, 0.000425f, 0.982493f)),
+                    ("_snappoint (3)", new Vector3(4.151907f, 0.000425f, -0.982493f)),
+                    ("_snappoint (4)", new Vector3(0.000315f, 3.75085f, 0.459798f)),
+                    ("_snappoint (5)", new Vector3(0.000315f, 3.75085f, -0.459798f)),
+                    ("_snappoint (6)", new Vector3(2.79729f, 0.000425f, -0.459798f)),
+                    ("_snappoint (7)", new Vector3(2.79729f, 0.000425f, 0.459798f)));
             case "Ashland_Stair":
                 return AddSnapPoints(prefab,
                     new Vector3(2f, 0f, -2f),
