@@ -101,6 +101,8 @@ internal static class PrefabClassifier
         "FishingRodFloat",
         "Flies",
         "HelmetOdin",
+        // Original 1.0.20 WearNTear has no m_new visual; UpdateVisual dereferences it.
+        "Morkhalla_Stonepile",
         "Pickable_Barley_Wild",
         "Pickable_DolmenTreasure",
         "Pickable_DvergerThing",

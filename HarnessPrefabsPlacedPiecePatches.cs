@@ -263,6 +263,7 @@ internal static class HarnessPrefabsPlacedPiecePatches
         ApplySpawnOnDestroyedPatch(piece, prefabName);
         ApplyDoorPatches(piece);
         ApplyBrazierWarmthPatch(piece, prefabName);
+        RemoveMissingObsidianFragments(piece, prefabName);
 
         if (MvbpCompatibilityDefaults.HasPlayerBasePatch(prefabName))
         {
@@ -279,6 +280,26 @@ internal static class HarnessPrefabsPlacedPiecePatches
         {
             ApplyFermenterPatch(piece.gameObject, prefabName, fermenterPatchDurationPercent);
         }
+    }
+
+    private static void RemoveMissingObsidianFragments(Piece piece, string prefabName)
+    {
+        if (prefabName != "obsidian_pile")
+        {
+            return;
+        }
+
+        WearNTear wearNTear = piece.GetComponent<WearNTear>();
+        GameObject[] roots = wearNTear ? wearNTear.m_fragmentRoots : null;
+        if (roots == null || Array.TrueForAll(roots, root => root))
+        {
+            return;
+        }
+
+        // The original 1.0.20 asset contains a missing fragment root. The RPC
+        // dereferences every entry on all peers, so do not restrict this to owner.
+        // Replace only this placed instance's array; preserve the prefab data.
+        wearNTear.m_fragmentRoots = Array.FindAll(roots, root => root);
     }
 
     private static void ClearPlacedContainerInventory(Piece piece)
