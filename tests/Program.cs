@@ -99,6 +99,18 @@ internal static class Program
             Assert(Read(data, 1234, item));
             Assert(item.m_quality == 3 && item.m_variant == 4 && item.m_cheated && item.m_customData["key"] == "value");
         });
+        Check("current item format preserves an uncheated item", () =>
+        {
+            var item = Item();
+            Assert(Read(Payload(1234, cheated: false), 1234, item));
+            Assert(!item.m_cheated && item.m_quality == 3 && item.m_customData["key"] == "value");
+        });
+        Check("pre-110 item payload consumes the old cheat flag without restoring it", () =>
+        {
+            var item = Item();
+            Assert(Read(Payload(1234, version: 109), 1234, item));
+            Assert(!item.m_cheated && item.m_quality == 3 && item.m_variant == 4 && item.m_customData["key"] == "value");
+        });
         Check("mismatched item hash is rejected", () => Assert(!Read(Payload(1234), 4321, Item())));
         Check("truncated item payload is rejected", () => Assert(!Read(Payload(1234).Take(12).ToArray(), 1234, Item())));
         Check("unknown version is rejected", () =>
@@ -276,15 +288,16 @@ internal static class Program
         return (bool)Mod.GetType("HarnessPrefabs.HarnessPrefabsArmorStandSwap+StandItemData", true).GetMethod("TryRead", StaticPrivate).Invoke(null, args);
     }
 
-    private static byte[] Payload(int hash)
+    private static byte[] Payload(int hash, byte version = 110, bool cheated = true)
     {
-        // Fixed wire fixture of the ORIGINAL 1.0.7 ItemData format. Uses the real
-        // ZPackage writer and real ItemData.Load; no modified game assembly.
+        // Original item formats 109 and 110 share this layout. Valheim 1.0.20
+        // consumes the final flag in both, but restores cheated only for 110+.
+        // Uses the real ZPackage writer and ItemData.Load; no modified game DLL.
         var p = new ZPackage();
-        p.Write((byte)109); p.Write(12345); p.Write((byte)1); p.Write((byte)2); p.Write((byte)0);
+        p.Write(version); p.Write(12345); p.Write((byte)1); p.Write((byte)2); p.Write((byte)0);
         p.Write((byte)(4 | 16 | 32 | 64 | 128));
         p.Write((ushort)3); p.Write(4); p.Write((long)42); p.Write("Maker"); p.Write(hash);
-        p.WriteNumItems(1); p.Write("key"); p.Write("value"); p.Write((byte)1);
+        p.WriteNumItems(1); p.Write("key"); p.Write("value"); p.Write((byte)(cheated ? 1 : 0));
         return p.GetArray();
     }
 
