@@ -239,14 +239,18 @@ internal static class PrefabCategoryRegistry
         }
     }
 
-    [HarmonyPatch(typeof(BuildUi), "OnDestroy")]
-    private static class BuildUiDestroyPatch
+    // The HUD owns the build menu. BuildUi.OnDisable also runs on every menu close.
+    [HarmonyPatch(typeof(Hud), "OnDestroy")]
+    private static class HudDestroyPatch
     {
         [HarmonyPrefix]
-        private static void Prefix(BuildUi __instance)
+        private static void Prefix(Hud __instance)
         {
-            Detach(__instance, destroying: true);
-            if (ReferenceEquals(_ui, __instance)) _ui = null;
+            BuildUi ui = __instance.m_buildUi;
+            // Even a destroyed Unity wrapper can still be a key in Registrations.
+            if (ReferenceEquals(ui, null)) return;
+            Detach(ui, destroying: true);
+            if (ReferenceEquals(_ui, ui)) _ui = null;
         }
     }
 

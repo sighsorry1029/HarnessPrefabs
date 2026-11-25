@@ -154,6 +154,9 @@
         <Compile Include="HarnessPrefabsPlacedPiecePatches.cs"/>
         <Compile Include="HarnessPrefabsConsoleCommands.cs"/>
         <Compile Include="PrefabIconRenderer.cs"/>
+        <Compile Include="IconSnapshot.cs"/>
+        <Compile Include="PrefabIconPng.cs"/>
+        <Compile Include="PrefabIconSources.cs"/>
         <Compile Include="PrefabMvbpFixups.cs"/>
         <Compile Include="PrefabOwnerCatalog.cs"/>
         <Compile Include="HarnessPrefabsSfxManager.cs"/>

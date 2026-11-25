@@ -3,9 +3,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using BepInEx;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -13,11 +11,6 @@ namespace HarnessPrefabs;
 
 internal sealed class PrefabIconRenderer : MonoBehaviour
 {
-    // Select the byte[] API explicitly: Unity 6 also exposes Span overloads which
-    // cannot be bound by the net48 compiler's framework reference assemblies.
-    private static readonly Func<Texture2D, byte[], bool> LoadImage =
-        (Func<Texture2D, byte[], bool>)Delegate.CreateDelegate(typeof(Func<Texture2D, byte[], bool>),
-            typeof(ImageConversion).GetMethod("LoadImage", new[] { typeof(Texture2D), typeof(byte[]) }));
     private static readonly HashSet<string> DoNotCache = new(StringComparer.Ordinal)
     {
         "portal",
@@ -27,7 +20,10 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
 
     private static PrefabIconRenderer _instance;
     private readonly Dictionary<string, Sprite> _icons = new(StringComparer.Ordinal);
-    private readonly Dictionary<Piece, Sprite> _previousIcons = new();
+    private readonly HashSet<Sprite> _ownedIcons = new();
+    private readonly Dictionary<Piece, (Sprite Original, Sprite Assigned)> _previousIcons = new();
+    private PrefabIconSources _sources;
+    private IconSnapshot _refit;
     private Camera _camera;
     private Light _light;
 
@@ -104,7 +100,34 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
                 Piece piece = _queue.Dequeue();
                 if (!piece) continue;
                 GameObject prefab = piece.gameObject;
-                Sprite sprite = TryRender(prefab);
+                _sources ??= new PrefabIconSources();
+                Sprite sprite = null;
+                var model = prefab;
+                bool first = true, triedFallback = false;
+                while (model)
+                {
+                    if (processed >= 4 || processed > 0 && Time.realtimeSinceStartup - batchStart >= 0.008f)
+                    {
+                        yield return null;
+                        processed = 0;
+                        batchStart = Time.realtimeSinceStartup;
+                        if (!piece || !model) { CancelRefit(); break; }
+                    }
+                    processed++;
+                    if (first)
+                    {
+                        first = false;
+                        sprite = _sources.ExistingIcon(piece);
+                        if (sprite || IsEffectLike(prefab)) break;
+                    }
+                    sprite = _refit != null ? Advance(_refit) : TryRender(model);
+                    if (sprite) { _ownedIcons.Add(sprite); break; }
+                    if (_refit != null) continue;
+                    if (triedFallback) break;
+                    triedFallback = true;
+                    model = GetPickableFallback(prefab);
+                }
+                if (!piece) continue;
                 if (sprite)
                 {
                     _icons[prefab.name] = sprite;
@@ -115,16 +138,11 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
                     // Keep the placeholder and avoid retrying on every Hammer refresh.
                     _failedPrefabNames.Add(prefab.name);
                 }
-                processed++;
-                if (processed % 4 == 0 || Time.realtimeSinceStartup - batchStart >= 0.008f)
-                {
-                    yield return null;
-                    batchStart = Time.realtimeSinceStartup;
-                }
             }
         }
         finally
         {
+            CancelRefit();
             _queued.Clear();
             _queuedPrefabNames.Clear();
             _processing = false;
@@ -134,20 +152,9 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
 
     private Sprite TryRender(GameObject prefab)
     {
-        if (!prefab || IsEffectLike(prefab))
-        {
-            return null;
-        }
-
         try
         {
-            Sprite sprite = RenderCached(prefab);
-            if (!sprite)
-            {
-                sprite = TryRenderPickableItemFallback(prefab);
-            }
-
-            return sprite;
+            return RenderCached(prefab);
         }
         catch (Exception ex)
         {
@@ -156,7 +163,7 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
         }
     }
 
-    private Sprite TryRenderPickableItemFallback(GameObject prefab)
+    private static GameObject GetPickableFallback(GameObject prefab)
     {
         PickableItem.RandomItem[] randomItems = prefab.GetComponent<PickableItem>()?.m_randomItemPrefabs;
         if (randomItems == null || randomItems.Length == 0)
@@ -165,59 +172,67 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
         }
 
         ItemDrop itemPrefab = randomItems[0].m_itemPrefab;
-        GameObject itemObject = itemPrefab ? itemPrefab.gameObject : null;
-        if (!itemObject)
-        {
-            return null;
-        }
-
-        return RenderCached(itemObject);
+        return itemPrefab ? itemPrefab.gameObject : null;
     }
 
     private void Assign(Piece piece, Sprite sprite)
     {
-        if (!_previousIcons.ContainsKey(piece)) _previousIcons.Add(piece, piece.m_icon);
+        var original = _previousIcons.TryGetValue(piece, out var entry) ? entry.Original : piece.m_icon;
+        _previousIcons[piece] = (original, sprite);
         piece.m_icon = sprite;
     }
 
     private Sprite RenderCached(GameObject prefab)
     {
-        // A new renderer revision skips the old transparent PNGs without deleting them.
-        string path = Path.Combine(Paths.CachePath, "HarnessPrefabs", "valheim-" + global::Version.GetVersionString() + "-icons-r2",
-            prefab.name.GetStableHashCode().ToString("X8") + ".png");
-        bool cache = !DoNotCache.Contains(prefab.name);
-        if (cache && File.Exists(path))
-        {
-            Texture2D texture = new(2, 2, TextureFormat.RGBA32, false);
-            try
-            {
-                if (LoadImage(texture, File.ReadAllBytes(path)) && HasVisiblePixels(texture.GetPixels32()))
-                    return Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), Vector2.one * 0.5f);
-            }
-            catch (Exception ex) { HarnessPrefabsPlugin.Log.LogDebug($"Icon cache read failed: {ex.Message}"); }
-            Destroy(texture);
-        }
-        Sprite sprite = RenderPrefab(prefab);
-        if (sprite && cache)
+        string path = null;
+        if (!DoNotCache.Contains(prefab.name))
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllBytes(path, ImageConversion.EncodeToPNG(sprite.texture));
+                path = PrefabIconPng.PathFor(_sources.GetOwner(prefab), prefab.name, "Hammer");
+                var cached = PrefabIconPng.Read(path);
+                if (cached != null) return cached;
             }
-            catch (Exception ex) { HarnessPrefabsPlugin.Log.LogDebug($"Icon cache write failed: {ex.Message}"); }
+            catch (Exception ex) { HarnessPrefabsPlugin.Log.LogDebug("Icon cache path: " + ex.GetBaseException().Message); }
         }
-        return sprite;
+        var job = PrepareCapture(prefab, path);
+        return job != null ? Advance(job) : null;
     }
 
-    private Sprite RenderPrefab(GameObject prefab)
+    private Sprite Advance(IconSnapshot job)
+    {
+        _refit = null;
+        try
+        {
+            // Other icon renderers also use layer 31. Light only our own capture.
+            _light.enabled = true;
+            if (!job.Step(out var sprite)) _refit = job;
+            return sprite;
+        }
+        catch (Exception ex)
+        {
+            HarnessPrefabsPlugin.Log.LogDebug("Icon capture: " + ex.GetBaseException().Message);
+            return null;
+        }
+        finally
+        {
+            _light.enabled = false;
+            if (_refit == null) job.Dispose();
+        }
+    }
+
+    private void CancelRefit()
+    {
+        _refit?.Dispose();
+        _refit = null;
+    }
+
+    private IconSnapshot PrepareCapture(GameObject prefab, string path)
     {
         EnsureCamera();
         GameObject container = new("HarnessPrefabs_IconClone");
         container.SetActive(false);
-        RenderTexture previous = RenderTexture.active;
-        RenderTexture target = null;
-        Texture2D texture = null;
+        IconSnapshot job = null;
         try
         {
             // The inactive parent prevents Awake/OnEnable on the clone. All gameplay components
@@ -248,41 +263,12 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
             foreach (ParticleSystem particles in clone.GetComponentsInChildren<ParticleSystem>(true))
                 particles.Simulate(5f, withChildren: false, restart: true);
 
-            target = RenderTexture.GetTemporary(128, 128);
-            _camera.targetTexture = target;
-            RenderTexture.active = target;
-            clone.SetActive(true);
-            container.SetActive(true);
-            _camera.Render();
-            container.SetActive(false);
-            texture = new Texture2D(128, 128, TextureFormat.RGBA32, false);
-            texture.ReadPixels(new Rect(0, 0, 128, 128), 0, 0);
-            texture.Apply();
-            if (!HasVisiblePixels(texture.GetPixels32()))
-            {
-                HarnessPrefabsPlugin.Log.LogWarning($"Icon render for '{prefab.name}' was fully transparent; keeping the fallback icon.");
-                return null;
-            }
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, 128, 128), Vector2.one * 0.5f);
-            texture = null; // The returned sprite owns this texture until Release.
-            return sprite;
+            return job = new IconSnapshot(prefab, container, _camera, path);
         }
         finally
         {
-            container.SetActive(false);
-            DestroyImmediate(container);
-            if (texture) Destroy(texture);
-            _camera.targetTexture = null;
-            RenderTexture.active = previous;
-            if (target) RenderTexture.ReleaseTemporary(target);
+            if (job == null) DestroyImmediate(container);
         }
-    }
-
-    private static bool HasVisiblePixels(Color32[] pixels)
-    {
-        foreach (Color32 pixel in pixels)
-            if (pixel.a != 0) return true;
-        return false;
     }
 
     private static bool StripNonVisualComponents(GameObject clone)
@@ -350,6 +336,7 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
         _camera.cullingMask = 1 << 31;
         _camera.transform.rotation = Quaternion.Euler(0, 180, 0);
         _light = new GameObject("HarnessPrefabs_IconLight").AddComponent<Light>();
+        _light.enabled = false;
         _light.transform.SetParent(transform);
         _light.transform.rotation = Quaternion.Euler(5, 180, 5);
         _light.type = LightType.Directional;
@@ -383,16 +370,17 @@ internal sealed class PrefabIconRenderer : MonoBehaviour
     private void Cleanup()
     {
         StopAllCoroutines();
-        HashSet<Sprite> owned = new(_icons.Values);
+        CancelRefit();
         foreach (var entry in _previousIcons)
-            if (entry.Key && owned.Contains(entry.Key.m_icon)) entry.Key.m_icon = entry.Value;
-        foreach (Sprite sprite in owned)
+            if (entry.Key && entry.Key.m_icon == entry.Value.Assigned) entry.Key.m_icon = entry.Value.Original;
+        foreach (Sprite sprite in _ownedIcons)
         {
             if (!sprite) continue;
             Destroy(sprite.texture);
             Destroy(sprite);
         }
         _icons.Clear();
+        _ownedIcons.Clear();
         _previousIcons.Clear();
         _failedPrefabNames.Clear();
         ClearCamera();

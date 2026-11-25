@@ -74,6 +74,31 @@ internal static class Program
             Assert(HasVisibleIconPixels(pixels));
             Assert(pixels[0].a == 0 && pixels[pixels.Length - 1].a == 1);
         });
+        Check("a small offset icon accepts a centered refit with the same silhouette", () =>
+        {
+            var first = MeasureRectangle(20, 48, 40, 20);
+            var centered = MeasureRectangle(8, 36, 112, 56);
+            var clipped = MeasureRectangle(0, 36, 112, 56);
+            var changedShape = MeasureRectangle(8, 10, 112, 108);
+            var type = first.GetType();
+            const BindingFlags fields = BindingFlags.NonPublic | BindingFlags.Instance;
+            var needsCorrection = type.GetProperty("NeedsCorrection", fields);
+            var accepts = type.GetMethod("Accepts", fields);
+            Assert((bool)needsCorrection.GetValue(first));
+            Assert(!(bool)needsCorrection.GetValue(centered));
+            Assert((bool)accepts.Invoke(first, new[] { centered }));
+            Assert(!(bool)accepts.Invoke(first, new[] { clipped }));
+            Assert(!(bool)accepts.Invoke(first, new[] { changedShape }));
+        });
+        Check("well-framed foliage can reveal more edge texels in the second capture", () =>
+        {
+            // First-pass and enlarged bounds measured with the game's vegetation shader.
+            var blueberry = MeasureRectangle(40, 45, 45, 38);
+            var northBush = MeasureRectangle(40, 45, 43, 37);
+            var accepts = blueberry.GetType().GetMethod("Accepts", BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert((bool)accepts.Invoke(blueberry, new[] { MeasureRectangle(5, 14, 111, 104) }));
+            Assert((bool)accepts.Invoke(northBush, new[] { MeasureRectangle(3, 13, 118, 106) }));
+        });
         Check("durability readback uses native hundredths", () =>
         {
             foreach (float durability in new[] { 1.239f, 13.579f, 127.4567f, 0.009f, 200f })
@@ -259,8 +284,23 @@ internal static class Program
         }
     }
 
-    private static bool HasVisibleIconPixels(Color32[] pixels) => (bool)Mod.GetType("HarnessPrefabs.PrefabIconRenderer", true)
-        .GetMethod("HasVisiblePixels", StaticPrivate).Invoke(null, new object[] { pixels });
+    private static object MeasureRectangle(int left, int bottom, int width, int height)
+    {
+        var pixels = new Color32[128 * 128];
+        for (int y = bottom; y < bottom + height; y++)
+            for (int x = left; x < left + width; x++)
+                pixels[y * 128 + x].a = 255;
+        return MeasureIcon(pixels);
+    }
+
+    private static object MeasureIcon(Color32[] pixels) => Mod.GetType("HarnessPrefabs.IconSnapshot", true)
+        .GetMethod("Measure", StaticPrivate).Invoke(null, new object[] { pixels });
+
+    private static bool HasVisibleIconPixels(Color32[] pixels)
+    {
+        var footprint = MeasureIcon(pixels);
+        return (byte)footprint.GetType().GetField("Peak", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(footprint) > 0;
+    }
 
     private static IList FilterClothColliders(IList colliders) => (IList)Mod.GetType("HarnessPrefabs.ArmorStandSetupClothPatch", true)
         .GetMethod("FilterClothColliders", StaticPrivate).Invoke(null, new object[] { colliders });
